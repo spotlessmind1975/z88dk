@@ -91,7 +91,6 @@ void read_symbol_file(char *filename)
 {
     FILE *fp = fopen(filename,"r");
     UT_string* temp;
-    int length;
 
     if ( fp != NULL ) {
         while ( fgets(read_symbol_buf, sizeof(read_symbol_buf), fp) != NULL ) {
@@ -106,7 +105,7 @@ void read_symbol_file(char *filename)
                      strncasecmp(argv[0], "__data", 6) == 0 ||
                      strncasecmp(argv[0], "__rodata", 8) == 0 ) {
                     // It's something to do with a section 
-                    int len = strlen(argv[0]);
+                    int len = (int)strlen(argv[0]);
 
                     // Rely on z80asm writing them out, __head, __tail, __size
                     // Once we detect __size, we have all the informaiton we need
@@ -369,7 +368,7 @@ const char *find_symbol(int addr, symboltype preferred_type)
 char **parse_words(char *line, int *argc)
 {
     int                 i = 0, j = 0 , n = 0;
-    int                 len = strlen(line);
+    int                 len = (int)strlen(line);
     int                 in_single_quotes = 0, in_double_quotes = 0;
     char              **args;
 
@@ -459,6 +458,7 @@ void symbol_add_autolabel(int address, char *label)
     sym->name = strdup(label);
     sym->address = address;
     sym->symtype = SYM_ADDRESS;
+    sym->unique = 1;
     LL_APPEND(symbols[sym->address % SYM_TAB_SIZE], sym);
     HASH_ADD_KEYPTR(hh, global_symbols, sym->name, strlen(sym->name), sym);
 

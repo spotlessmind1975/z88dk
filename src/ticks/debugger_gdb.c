@@ -27,6 +27,7 @@
 #define NS_TO_US(ns)    ((ns)/1000)
 
 static uint8_t verbose = 0;
+static char* script_file = NULL;
 int c_autolabel = 0;
 uint8_t temporary_break = 0;
 static uint8_t has_clock_register = 0;
@@ -197,7 +198,7 @@ int hex(char ch)
 char *mem2hex(const uint8_t *mem, char *buf, uint32_t count)
 {
     unsigned char ch;
-    for (int i = 0; i < count; i++)
+    for (int i = 0; i < (int)count; i++)
     {
         ch = *(mem++);
         *buf++ = hexchars[ch >> 4];
@@ -210,7 +211,7 @@ char *mem2hex(const uint8_t *mem, char *buf, uint32_t count)
 uint8_t *hex2mem(const char *buf, uint8_t *mem, uint32_t count)
 {
     unsigned char ch;
-    for (int i = 0; i < count; i++)
+    for (int i = 0; i < (int)count; i++)
     {
         ch = hex(*buf++) << 4;
         ch = ch + hex(*buf++);
@@ -345,6 +346,11 @@ uint8_t is_verbose()
     return verbose;
 }
 
+char* script_filename()
+{
+    return script_file;
+}
+
 uint16_t get_pc()
 {
     return fetch_registers()->pc;
@@ -355,8 +361,10 @@ uint16_t get_sp()
     return fetch_registers()->sp;
 }
 
-uint8_t get_memory(uint16_t at)
+uint8_t get_memory(uint32_t at, memtype type)
 {
+    at &= 0xffff;
+
     if (at >= mem_requested_at && (int)at < (int)(mem_requested_at + mem_requested_amount))
     {
         return mem_fetch[at - mem_requested_at];
@@ -387,7 +395,7 @@ uint8_t get_memory(uint16_t at)
     sprintf(req, "m%zx,%zx", (size_t)mem_requested_at, (size_t)mem_requested_amount);
 
     const char* mem = send_request(req);
-    uint32_t bytes_recv = strlen(mem) / 2;
+    uint32_t bytes_recv = (int)strlen(mem) / 2;
     if (bytes_recv != mem_requested_amount)
     {
         bk.debug("Warning: received incorrect amount of data.");
@@ -613,7 +621,7 @@ void debugger_next(uint8_t add_bp)
     int len;
     const unsigned short pc = bk.pc();
 
-    uint8_t opcode = bk.get_memory(pc);
+    uint8_t opcode = bk.get_memory(pc, MEM_TYPE_INST);
 
     len = disassemble2(pc, buf, sizeof(buf), 0);
 
@@ -681,7 +689,7 @@ uint8_t debugger_restore(const char* file_path, uint16_t at, uint8_t set_pc)
         UT_string s;
         utstring_init(&s);
         utstring_printf(&s, "M%zx,%zx:", addr, read_);
-        mem2hex(buff, hex_buff, read_);
+        mem2hex(buff, hex_buff, (uint32_t)read_);
         utstring_bincpy(&s, hex_buff, read_ * 2);
         const char* response = send_request(utstring_body(&s));
         if (strcmp(response, "OK") != 0)
@@ -825,7 +833,7 @@ static uint8_t process_packet()
         return 0;
     }
 
-    int packetend = packetend_ptr - inbuf;
+    int packetend = (int)(packetend_ptr - inbuf);
     inbuf[packetend] = '\0';
 
     uint8_t checksum = 0;
@@ -936,7 +944,7 @@ static uint8_t is_gdbserver_connected()
 
 static uint8_t connect_to_gdbserver(const char* connect_host, int connect_port)
 {
-    connection_socket = socket(AF_INET, SOCK_STREAM, 0);
+    connection_socket = (int)socket(AF_INET, SOCK_STREAM, 0);
 #ifdef _WIN32
 	if (connection_socket == SOCKET_ERROR) {
 		bk.debug("Socket error: %d\n", WSAGetLastError());
@@ -1200,7 +1208,8 @@ static backend_t gdb_backend = {
     .debug = stdout_log,
     .execution_stopped = gdb_execution_stopped,
     .ctrl_c = ctrl_c,
-    .time = gdb_profiler_time
+    .time = gdb_profiler_time,
+	.script_filename = script_filename
 };
 
 static void process_scheduled_actions()
@@ -1272,6 +1281,11 @@ int main(int argc, char **argv) {
             read_symbol_file(debug_symbols);
             if (bk.is_verbose()) {
                 bk.debug("OK\n");
+            }
+        } else if (strcmp(argv[i], "--script") == 0) {
+            script_file = argv[++i];
+            if (bk.is_verbose()) {
+                bk.debug("Will load script file...");
             }
         } else if (strcmp(argv[i], "-v") == 0) {
             verbose = 1;
@@ -1351,5 +1365,10 @@ int main(int argc, char **argv) {
         }
     }
 
+    return 0;
+}
+
+int israbbit4k(void)
+{
     return 0;
 }

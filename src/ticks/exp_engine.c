@@ -117,7 +117,7 @@ void expression_primitive_func_call_1(const char* call, struct expression_result
             to->as_int = a->type.first->size;
         } else {
             to->type.first = malloc_type(TYPE_INT);
-            to->as_int = a->type.size;
+            to->as_int = (int)a->type.size;
         }
         return;
     }
@@ -160,15 +160,15 @@ void expression_dereference_pointer(struct expression_result_t *from, struct exp
             break;
         }
         case TYPE_CHAR: {
-            to->as_int = bk.get_memory(data);
+            to->as_int = bk.get_memory(data, MEM_TYPE_DATA);
             break;
         }
         case TYPE_INT: {
-            to->as_int = (bk.get_memory(data + 1) << 8) + bk.get_memory(data);
+            to->as_int = (bk.get_memory(data + 1, MEM_TYPE_DATA) << 8) + bk.get_memory(data, MEM_TYPE_DATA);
             break;
         }
         case TYPE_LONG:{
-            to->as_int = (bk.get_memory(data + 3) << 24) + (bk.get_memory(data + 2) << 16) + (bk.get_memory(data + 1) << 8) + bk.get_memory(data);
+            to->as_int = (bk.get_memory(data + 3, MEM_TYPE_DATA) << 24) + (bk.get_memory(data + 2, MEM_TYPE_DATA) << 16) + (bk.get_memory(data + 1, MEM_TYPE_DATA) << 8) + bk.get_memory(data, MEM_TYPE_DATA);
             break;
         }
         case TYPE_FLOAT: {
@@ -718,7 +718,7 @@ UT_string* expression_result_value_to_string(struct expression_result_t* result)
 
                     int i = 0;
                     while (i < 128) {
-                        uint8_t c = bk.get_memory(result->as_pointer.ptr + i);
+                        uint8_t c = bk.get_memory(result->as_pointer.ptr + i, MEM_TYPE_DATA);
                         if (c == 0) {
                             break;
                         }

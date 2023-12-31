@@ -552,6 +552,7 @@ static void print_line_info(struct lexer_state *ls, unsigned long flags)
 	} else {
 		sprintf(b, "#line %ld \"%s\"\n", ls->line, fn);
 	}
+        put_char(ls, '\n');
 	for (d = b; *d; d ++) put_char(ls, (unsigned char)(*d));
 	freemem(b);
 }
@@ -582,7 +583,7 @@ int enter_file(struct lexer_state *ls, unsigned long flags)
 		return 1;
 	}
 	print_line_info(ls, flags);
-	ls->oline --;	/* emitted #line troubled oline */
+	ls->oline -=2;	/* emitted #line troubled oline */
 	return 0;
 }
 
@@ -675,7 +676,7 @@ static FILE *find_file(char *name, int localdir)
 		char *rfn = current_long_filename ? current_long_filename
 			: current_filename;
 
-		for (i = strlen(rfn) - 1; i >= 0; i --)
+		for (i = (int)strlen(rfn) - 1; i >= 0; i --)
 #if defined _WIN32
 			if (rfn[i] == '\\' || rfn[i] == '/') break;
 #elif defined MSDOS
@@ -1342,7 +1343,7 @@ include_macro2:
 	freemem(tf.t);
 	ls->output_fifo = save_tf;
 	for (x = 0; (size_t)x < tf2.nt && ttWHI(tf2.t[x].type); x ++);
-	for (y = tf2.nt - 1; y >= 0 && ttWHI(tf2.t[y].type); y --);
+	for (y = (int)tf2.nt - 1; y >= 0 && ttWHI(tf2.t[y].type); y --);
 	if ((size_t)x >= tf2.nt) goto include_macro_err;
 	if (tf2.t[x].type == STRING) {
 		if (y != x) goto include_macro_err;
@@ -1366,12 +1367,12 @@ include_macro2:
 		if (ls->flags & WARN_ANNOYING) warning(l, "reconstruction "
 			"of <foo> in #include");
 		for (j = 0, i = x; i <= y; i ++) if (!ttWHI(tf2.t[i].type))
-			j += strlen(tname(tf2.t[i]));
+			j += (int)strlen(tname(tf2.t[i]));
 		fname = getmem(j + 1);
 		for (j = 0, i = x; i <= y; i ++) {
 			if (ttWHI(tf2.t[i].type)) continue;
 			strcpy(fname + j, tname(tf2.t[i]));
-			j += strlen(tname(tf2.t[i]));
+			j += (int)strlen(tname(tf2.t[i]));
 		}
 		*(fname + j - 1) = 0;
 		mmvwo(fname, fname + 1, j);

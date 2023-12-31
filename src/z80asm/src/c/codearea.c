@@ -1,7 +1,7 @@
 /*
 Z88DK Z80 Macro Assembler
 
-Copyright (C) Paulo Custodio, 2011-2022
+Copyright (C) Paulo Custodio, 2011-2023
 License: The Artistic License 2.0, http://www.perlfoundation.org/artistic_license_2_0
 Repository: https://github.com/z88dk/z88dk
 
@@ -14,8 +14,11 @@ Manage the code area in memory
 #include "if.h"
 #include "init.h"
 #include "module1.h"
+#include "objfile.h"
+#include "strpool.h"
 #include "strutil.h"
 #include "utstring.h"
+#include "xassert.h"
 #include "z80asm.h"
 #include <memory.h>
 
@@ -52,13 +55,13 @@ void Section1_init (Section1 *self)
 {
 	self->name = "";		/* default: empty section */
 	self->addr	= 0;
-	self->origin = -1;
+	self->origin = ORG_NOT_DEFINED;
 	self->align = 1;
 	self->origin_found = false;
 	self->origin_opts = false;
 	self->section_split = false;
 	self->asmpc = 0;
-	self->asmpc_phase = -1;
+	self->asmpc_phase = ORG_NOT_DEFINED;
 	self->opcode_size = 0;
 	
 	self->bytes = OBJ_NEW(ByteArray);
@@ -106,7 +109,7 @@ void reset_codearea( void )
 int get_section_size( Section1 *section )
 {
     init_module();
-    return ByteArray_size( section->bytes );
+    return (int)ByteArray_size(section->bytes);
 }
 
 /*-----------------------------------------------------------------------------
@@ -151,7 +154,7 @@ Section1 *new_section( const char *name )
 		/* define start address of all existing modules = 0, except for default section */
 		if ( g_default_section != NULL && *name != '\0' )
 		{
-			last_id = intArray_size( g_default_section->module_start ) - 1;
+            last_id = (int)intArray_size(g_default_section->module_start) - 1;
 			if ( last_id >= 0 )
 				intArray_item( g_cur_section->module_start, last_id );		/* init [0..module_id] to zero */
 		}
@@ -209,7 +212,7 @@ Section1 *get_next_section(  Section1HashElem **piter )
 static int get_last_module_id( void )
 {
 	init_module();
-	return intArray_size( g_default_section->module_start ) - 1;
+    return (int)(intArray_size(g_default_section->module_start) - 1);
 }
 
 int get_cur_module_id( void )
@@ -236,7 +239,7 @@ static int section_module_start( Section1 *section, int module_id )
 	int cur_size;
 	
     init_module();
-	cur_size = intArray_size( section->module_start );
+    cur_size = (int)intArray_size(section->module_start);
 	if ( cur_size > module_id )
 		addr = *( intArray_item( section->module_start, module_id ) );
 	else
@@ -277,6 +280,7 @@ static int section_module_size(  Section1 *section, int module_id )
 
 int get_cur_module_start( void ) { return section_module_start( g_cur_section, g_cur_module ); }
 int get_cur_module_size(  void ) { return section_module_size(  g_cur_section, g_cur_module ); }
+int get_cur_opcode_size(void) { init_module(); return g_cur_section->opcode_size; }
 
 /*-----------------------------------------------------------------------------
 *   allocate the addr of each of the sections, concatenating the sections in
@@ -340,7 +344,7 @@ int new_module_id( void )
 		  section = get_next_section( &iter ) )
 	{
 		section->asmpc = 0;
-		section->asmpc_phase = -1;
+		section->asmpc_phase = ORG_NOT_DEFINED;
 		section->opcode_size = 0;
 		(void) section_module_start( section, module_id );
 	}
@@ -508,52 +512,6 @@ void patch_from_memory(byte_t* data, int addr, long num_bytes) {
 }
 
 /*-----------------------------------------------------------------------------
-*   read/write current module to an open file
-*----------------------------------------------------------------------------*/
-bool fwrite_module_code(FILE *file, int* p_code_size)
-{
-	Section1 *section;
-	Section1HashElem *iter;
-	bool wrote_data = false;
-	int code_size = 0;
-	int addr, size;
-
-	init_module();
-	for (section = get_first_section(&iter); section != NULL;
-		section = get_next_section(&iter))
-	{
-		addr = section_module_start(section, g_cur_module);
-		size = section_module_size(section, g_cur_module);
-
-		/* write all sections, even empty ones, to allow user to define sections list by
-		   a sequence of SECTION statements
-		   exception: empty section, as it is the first one anyway, if no ORG is defined */
-		if (size > 0 || section != get_first_section(NULL) || 
-		    section->origin >= 0 || section->align > 1)
-		{
-			xfwrite_dword(size, file);
-			xfwrite_wcount_cstr(section->name, file);
-			write_origin(file, section);
-			xfwrite_dword(section->align, file);
-
-			if (size > 0)		/* ByteArray_item(bytes,0) creates item[0]!! */
-				xfwrite_bytes((char *)ByteArray_item(section->bytes, addr), size, file);
-
-			code_size += size;
-			wrote_data = true;
-		}
-	}
-
-	if (wrote_data)
-		xfwrite_dword(-1, file);		/* end marker */
-
-	if (p_code_size)
-		*p_code_size = code_size;
-
-	return wrote_data;
-}
-
-/*-----------------------------------------------------------------------------
 *   read/write whole code area to an open file
 *----------------------------------------------------------------------------*/
 void fwrite_codearea(CodeareaFile* binfile, CodeareaFile* relocfile) {
@@ -706,7 +664,7 @@ extern void set_origin(int origin, Section1 *section) {
 		section->origin = origin;
 		section->section_split = false;
 	}
-	else if (origin == -2) {
+	else if (origin == ORG_SECTION_SPLIT) {
 		section->section_split = true;
 	}
 	else {
@@ -718,9 +676,9 @@ void write_origin(FILE* file, Section1 *section) {
 	int origin = section->origin;
 	if (origin < 0) {
 		if (section->section_split)
-			origin = -2;			/* write -2 for section split */
+			origin = ORG_SECTION_SPLIT;			/* write ORG_SECTION_SPLIT for section split */
 		else
-			origin = -1;			/* write -1 for not defined */
+			origin = ORG_NOT_DEFINED;			/* write ORG_NOT_DEFINED for not defined */
 	}
 
 	xfwrite_dword(origin, file);
@@ -736,5 +694,5 @@ void set_phase_directive(int address)
 
 void clear_phase_directive()
 {
-	CURRENTSECTION->asmpc_phase = -1;
+	CURRENTSECTION->asmpc_phase = ORG_NOT_DEFINED;
 }

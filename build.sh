@@ -47,6 +47,21 @@ case `uname -s` in                      # Insert default values for MAKE and INS
     MAKE="gmake"
     INSTALL="install"
     export INSTALL
+    if [ -z "$CC" ]; then                   # Insert default value for CC if CC is empty
+      CC="cc"
+      export CC
+    fi
+    ;;
+  Darwin)
+    if ! command -v gmake &> /dev/null
+    then
+        MAKE="make"
+        echo "Using gmake is recommended on MacOS"
+    else
+        MAKE="gmake"
+    fi
+    INSTALL="install"
+    export INSTALL
     ;;
   *)
     MAKE="make"
@@ -67,7 +82,7 @@ DESTDIR=/usr/local
 
 builddir=$(pwd)
 ZCCCFG=$builddir/lib/config
-PATH=$builddir/bin:$PATH
+PATH="$builddir/bin:$PATH"
 export ZCCCFG
 export PATH
 
@@ -151,7 +166,6 @@ if [ -z "$CC" ]; then                   # Insert default value for CC if CC is e
   export CC
 fi
 
-
 if [ -z "$CFLAGS" ]; then               # Insert default value for CFLAGS if CFLAGS is empty
   CFLAGS="-g -O2"
   export CFLAGS
@@ -160,8 +174,8 @@ fi
 
 path=`pwd`/bin                          # Add bin directory to path if it's not already there
 mkdir -p $path                          # Guarantee that the directory exists
-if [ $PATH != *$path* ]; then
-  PATH=$path:$PATH
+if [ "$PATH" != *$path* ]; then
+  PATH="$path:$PATH"
   export PATH
 fi
 
@@ -182,9 +196,9 @@ if [ $do_libbuild = 1 ]; then           # Build libraries or not...
   else
 	  MAKEARG=""
   fi
-  $MAKE -C libsrc $MAKEARG
+  $MAKE -C libsrc $MAKE_CONCURRENCY $MAKEARG
   $MAKE -C libsrc install
-  $MAKE -C libsrc/_DEVELOPMENT $TARGETS
+  $MAKE -C libsrc/_DEVELOPMENT $TARGETS $MAKE_CONCURRENCY
   $MAKE -C include/_DEVELOPMENT
 fi
 

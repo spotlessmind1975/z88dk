@@ -665,6 +665,8 @@ static void parse_trailing_modifiers(Type *type)
             }
         } else if ( amatch("__banked")) {
             type->flags |= BANKED;
+            if (c_banked_style == BANKED_STYLE_TICALC)
+                type->funcattrs.params_offset = 4;
         } else if ( amatch("__z88dk_hl_call")) {
             double module, addr;
             Kind  valtype;
@@ -979,7 +981,7 @@ Type *parse_decl(char name[], Type *base_type)
 
 /** \brief Parse an expression as used for a cast or a sizeof operation
  */
-Type *parse_expr_type()
+Type *parse_expr_type(void)
 {
     Type *type = dodeclare2(NULL, MODE_CAST);
 
@@ -1383,7 +1385,7 @@ Type *asm_function(const char *name)
 }
 
 
-void declare_func_kr()
+void declare_func_kr(void)
 {
     char   sname[NAMESIZE];
     Type  *func;
@@ -1538,7 +1540,10 @@ void flags_describe(Type *type, int32_t flags, UT_string *output)
         utstring_printf(output,"__z88dk_shortcall_hl ");
     }
 
-    if ( type->funcattrs.params_offset ) {
+    // BANKED_STYLE_TICALC sets type->funcattrs.params_offset
+    if ( type->funcattrs.params_offset && 
+           ( c_banked_style != BANKED_STYLE_TICALC || !(type->flags & BANKED)  )
+             ) {
         utstring_printf(output,"__z88dk_params_offset(%d) ", type->funcattrs.params_offset);
     }
 
@@ -1647,6 +1652,7 @@ void type_describe(Type *type, UT_string *output)
  * We can assign two pointers if:
  * 
  * - Same type exactly
+ * - LHS is const X * and rhs is const X const *
  * - LHS is const void * and rhs is const * or just *
  * - LHS is volatile void * and rhs is anything
  */
@@ -1676,6 +1682,11 @@ int type_matches_pointer(Type *t1, Type *t2)
             return 0;
         }
         return 1;
+    } else {
+        // Check that pointing to const objects of the same type
+        if ( p1->kind == p2->kind && p1->isconst && p2->isconst ) {
+            return 1;
+        }
     }
 
 
@@ -1935,6 +1946,13 @@ static void declfunc(Type *functype, enum storage_type storage)
         nl();
         GlobalPrefix(); outname(currfn->name, YES); nl();
         prefix();
+        outname(currfn->name, YES);
+        col();
+        // And now the clang version
+        nl();
+        GlobalPrefix(); outstr("__"); outname(currfn->name, YES); ;nl();
+        prefix();
+        outstr("__");
         outname(currfn->name, YES);
         col();
     }

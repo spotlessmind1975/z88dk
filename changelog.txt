@@ -1,31 +1,74 @@
 Concise Record of Changes to Z88DK Releases
 -------------------------------------------
 
+z88dk v2.4 - xx.xx.2024
 
-z88dk v2.3 - xx.xx.202x
+Future release changes:
+
+- [z80asm] process file.asm.m4 by m4 and assemble resulting file.asm
+
+
+z88dk v2.3 - 20.12.2023
+
+As ever, there's a large number of changes, the headline items are:
+
+- z80asm additionally supports ez80, r800, r4k, r5k, kc160 cpus
+- New classic targets: Agon Light, Aquarius Plus, Einstein 256, NabuPC
+- New video drivers: V9938, Tektronix, Regis
+- New fixed point Q8.8 maths library
+- Upgrade to SDCC 4.3.0 r14210
 
 Detailed but incomplete changelist:
 
+- [classic] +agon: New target
+- [classic] +aquarius: New target Aquarius Plus (-clib=aqplus)
 - [classic] +cpc: Interrupt support
 - [classic] +cpc: Graphics support for all 3 official modes
+- [classic] +cpm: Support for Xerox 820 and sound on 820ii
+- [classic] +cpm: IMD disk option added to several targets
+- [classic] +cpm: Support for Visual 1050
+- [classic] +cpm: Support for Sanyo MBC-200/MBC-1200 models
+- [classic] +cpm: Sanyo MBC disk formats (several models)
+- [classic] +cpm: VT-180 "Robin", Morrow, Ampro & Actrix disk formats
 - [classic] +cpm: Support for corvette boot disk
 - [classic] +cpm: Support for NabuPC
 - [classic] +cpm: Support for Gemini Galaxy
 - [classic] +cpm: Einstein 256 support added
+- [classic] +cpm: Support for many disk formats
+- [classic] +cpm: Improved handling of seeking in files
 - [classic] +msx: tape libraries for MSX and Spectravideo
 - [classic] +msx: Support for V9938 on MSX2
 - [classic] +nabu: New target: Nabu PC
-- [classic] +z80: New target
+- [classic] +ti83p: Support for creating multi-page applications
+- [classic] +z80: New minimal target
 - [classic] Support for Tektronix and Regis graphic terminals
 - [classic] Shared SP1 between classic and newlib
 - [classic] Arkos Tracker available for +cpc, +msx, +zx, +zxn
 - [classic] TMS99x8 library enhancements
 - [classic] A fixed point Q8.8 maths library is available
+- [classic] Support for using clang as a compiler
 - [newlib] Arkos Tracker available for +zx, +zxn
 - [sccz80] 8080, 8085, gbz80 opt-code-speed: add32, sub32, longcompare
 - [sccz80] Extended quikmult cases
 - [sccz80] Initialisation improvements
+- [ticks] Fixed Rabbit multiply, added r800 multiply instructions
+- [ticks] Support for Rabbit 4000 and KC160 processors
+- [zsdcc] The preprocessor has been switched over to ucpp which is C99 compatible
+- [zsdcc] Upgraded to SDCC 4.3.0 r14210
 - [z80asm] Allow jr across sections
+- [z80asm] Convert address difference to constant
+- [z80asm] Support #ifdef/#endif etc in assembler
+- [z80asm] Accept ':' as statement separator
+- [z80asm] add support of ez80, both z80 memory mode and ADL memory mode
+- [z80asm] add support of -raw-strings
+- [z80asm] add support of z80_strict that only accepts the documented opcodes
+- [z80asm] do not link with object files built for a different cpu
+- [z80asm] add -IXIY-soft that swaps index registers but saves object file as not-swapped
+- [z80asm] add symbol table to libraries to speed-up linking
+- [z80asm] allow the creation of fat libraries with the same code for all CPUs (-m*)
+- [z80asm] add support of r800, r4k, r5k, kc160
+- [z80asm] add EQ, NE, LTU, LEU, GTU, GEU condition codes, allow any flag in expressions
+- [z80asm] allow parallel builds
 - [zcc] +config at any place, support for -xc
 - [make] add cmake support
 

@@ -60,7 +60,7 @@ int symname(char* sname)
 }
 
 /* Return next avail internal label number */
-int getlabel()
+int getlabel(void)
 {
     return (++nxtlab);
 }
@@ -126,7 +126,7 @@ t_buffer* startbuffer(size_t blocks)
 }
 
 int bufferlen(t_buffer *buf) {
-    return buf->next - buf->start;
+    return (int)(buf->next - buf->start);
 }
 
 void suspendbuffer(void)
@@ -206,21 +206,21 @@ void clearstage_info(const char *file, int line, char* before, char* start)
     }
 }
 
-void fabort()
+void fabort(void)
 {
     closeout();
     errorfmt("Output file error", 1);
 }
 
 /* direct output to console */
-void toconsole()
+void toconsole(void)
 {
     saveout = output;
     output = 0;
 }
 
 /* direct output back to file */
-void tofile()
+void tofile(void)
 {
     if (saveout)
         output = saveout;
@@ -290,17 +290,17 @@ void outfmt(const char* fmt, ...)
     outstr(buf);
 }
 
-void nl()
+void nl(void)
 {
     outbyte('\n');
 }
 
-void tab()
+void tab(void)
 {
     outbyte('\t');
 }
 
-void bell()
+void bell(void)
 {
     outbyte(7);
 }
@@ -317,7 +317,7 @@ void ot(char* ptr)
     outstr(ptr);
 }
 
-void blanks()
+void blanks(void)
 {
     while (1) {
         while (ch() == 0) {
@@ -350,7 +350,7 @@ void outd2(long n)
         outd2(n / 10);
         n %= 10;
     }
-    outbyte('0' + n);
+    outbyte('0' + (n & 0xff));
 }
 
 /* convert lower case to upper */

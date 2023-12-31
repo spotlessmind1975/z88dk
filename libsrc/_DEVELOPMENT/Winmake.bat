@@ -77,7 +77,7 @@ for %%t in (%targets%) do (
 
       if exist target\%%t\library\%%t_macro.lst (
          echo   %%t_macro.m4
-         zcc +z80 -vn -clib=new -m4 --lstcwd @target/%%t/library/%%t_macro.lst
+         zcc +z80 -vn -clib=new -m4 -copy-back-after-m4 --lstcwd @target/%%t/library/%%t_macro.lst
       )
 
       echo   %%t_sccz80.lib
@@ -98,7 +98,7 @@ for %%t in (%targets%) do (
 
       echo   %%t_sdcc_iy.lib
 
-      z88dk-z80asm !cpu! -IXIY -x%%t_sdcc_iy -I!z88dklib! -D__SDCC -D__SDCC_IY @target/%%t/library/%%t_sdcc_iy.lst
+      z88dk-z80asm !cpu! -IXIY-soft -x%%t_sdcc_iy -I!z88dklib! -D__SDCC -D__SDCC_IY @target/%%t/library/%%t_sdcc_iy.lst
       move /Y %%t_sdcc_iy.lib lib/sdcc_iy/%%t.lib
 
       del /S *.o > nul 2>&1

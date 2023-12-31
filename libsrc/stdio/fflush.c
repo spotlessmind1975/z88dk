@@ -1,7 +1,7 @@
 /*
- *	fflush(fp)
+ *    fflush(fp)
  *
- *	Only really valid for TCP net connections
+ *    Only really valid for TCP net connections
  *
  * --------
  * $Id: fflush.c,v 1.4 2016-03-06 21:36:52 dom Exp $
@@ -12,60 +12,68 @@
 #endif
 
 #include <stdio.h>
+#include <fcntl.h>
 
 
 int fflush(FILE *fp)
 {
 #asm
-IF __CPU_R2KA__ | __CPU_R3K__
-	ld	hl,(sp + 2)
+IF __CPU_RABBIT__ | __CPU_KC160__
+    ld      hl,(sp + 2)
 ELSE
-	pop	bc
-	pop	hl
-	push	hl
-	push	bc
+    pop     bc
+    pop     hl
+    push    hl
+    push    bc
 ENDIF
-IF !__CPU_INTEL__ && !__CPU_GBZ80__ && !_CPU_GBZ80__
-	ld	e,(hl)
-	inc	hl
-	ld	d,(hl)
-	inc	hl
-	ld	a,(hl)
-	and	_IOUSE|_IOEXTRA
-	cp	_IOUSE|_IOEXTRA
-	jr	nz,fflush_error 	;not used
-	push	ix	;save callers ix
-	dec	hl
-	dec	hl	;hl = fp
-IF __CPU_R2KA__ | __CPU_R3K__
-	ld	hl,ix
-	ld	hl,(ix+fp_extra)
+    ld      e,(hl)   ;fd
+    inc     hl
+    ld      d,(hl)
+    inc     hl
+    ld      a,(hl)
+    and     _IOUSE|_IOSYSTEM|_IOWRITE
+    cp      _IOUSE|_IOWRITE
+IF __CPU_INTEL__ | __CPU_GBZ80__ 
+    jr      nz,fflush_error
 ELSE
-	push	hl
-	pop	ix
-	ld	l,(ix+fp_extra)
-	ld	h,(ix+fp_extra+1)
+    jr      nz,check_extra
 ENDIF
-	ld	a,__STDIO_MSG_FLUSH
-	call	l_jphl
-	pop	ix	;restore callers
-IF __CPU_R2KA__ | __CPU_R3K__
-	bool	hl
-	rr	hl
-ELSE
-	ld	hl,0
-  IF __CPU_GBZ80__
-        ld      d,h
-        ld      e,l
+    push    de       ;fd
+    call    fsync
+    pop     bc       ;dump param
+    ret
+IF !__CPU_INTEL__ && !__CPU_GBZ80__
+check_extra:
+    ld      a,(hl)
+    and     _IOUSE|_IOEXTRA
+    cp      _IOUSE|_IOEXTRA
+    jr      nz,fflush_error     ;not used
+    push    ix    ;save callers ix
+    dec     hl
+    dec     hl    ;hl = fp
+  IF __CPU_RABBIT__
+    ld      ix,hl
+  ELSE
+    push    hl
+    pop     ix
   ENDIF
-ENDIF
-	ret
+    ld      hl,(ix+fp_extra)
+    ld      a,__STDIO_MSG_FLUSH
+    call    l_jphl
+    pop     ix    ;restore callers
+  IF __CPU_RABBIT__
+    bool    hl
+    rr    hl
+  ELSE
+    ld      hl,0
+  ENDIF
+    ret
 ENDIF
 .fflush_error
-	ld	hl,-1	; EOF
+    ld      hl,-1    ; EOF
 IF __CPU_GBZ80__
-        ld      d,h
-        ld      e,l
+    ld      d,h
+    ld      e,l
 ENDIF
 #endasm
 }

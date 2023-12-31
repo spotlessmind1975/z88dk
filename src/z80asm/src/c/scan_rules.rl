@@ -1,7 +1,7 @@
 /*
 Z88DK Z80 Macro Assembler
 
-Copyright (C) Paulo Custodio, 2011-2022
+Copyright (C) Paulo Custodio, 2011-2023
 License: The Artistic License 2.0, http://www.perlfoundation.org/artistic_license_2_0
 Repository: https://github.com/z88dk/z88dk
 
@@ -14,6 +14,16 @@ ragel, to expand token definition from token_def.h.
 	{										<NL> \
 		<TAB>	sym.tok = name;				<NL> \
 		<TAB>	set_value;					<NL> \
+		<TAB>	fbreak; 					<NL> \
+	};										<NL>
+
+#define TOKEN_OPCODE_RE(name, string, regexp, set_value)	 \
+	regexp									<NL> \
+	{										<NL> \
+		<TAB>	sym.tok        = name;		<NL> \
+		<TAB>	sym.tok_opcode = name;		<NL> \
+		<TAB>	set_value;					<NL> \
+		<TAB>	expect_opcode  = false;		<NL> \
 		<TAB>	fbreak; 					<NL> \
 	};										<NL>
 
@@ -44,7 +54,8 @@ ragel, to expand token definition from token_def.h.
 #define TOKEN_RABBIT1(opcode, string)	 \
 	string <CAT> i										<NL> \
 	{													<NL> \
-		<TAB>		if ((option_cpu() & CPU_R2KA) || (option_cpu() & CPU_R3K)) {	<NL> \
+		<TAB>		if ((option_cpu() == CPU_R2KA) || (option_cpu() == CPU_R3K) || \
+                        (option_cpu() == CPU_R4K) || (option_cpu() == CPU_R5K)) {	<NL> \
 		<TAB><TAB>		sym.tok        = TK_##opcode;	<NL> \
 		<TAB>		}									<NL> \
 		<TAB>		else {								<NL> \
@@ -59,7 +70,7 @@ ragel, to expand token definition from token_def.h.
 #define TOKEN_ZXN1(opcode, string)	 \
 	string <CAT> i										<NL> \
 	{													<NL> \
-		<TAB>		if (option_cpu() & CPU_Z80N) {			<NL> \
+		<TAB>		if (option_cpu() == CPU_Z80N) {			<NL> \
 		<TAB><TAB>		sym.tok        = TK_##opcode;	<NL> \
 		<TAB>		}									<NL> \
 		<TAB>		else {								<NL> \
@@ -86,6 +97,22 @@ ragel, to expand token definition from token_def.h.
 #define TOKEN_8085(opcode)	 \
 	TOKEN_8085_1(opcode, #opcode)
 
+#define TOKEN_EZ80_1(opcode, string)	 \
+	string <CAT> i										<NL> \
+	{													<NL> \
+		<TAB>		if (option_cpu() == CPU_EZ80 ||		<NL> \
+					    option_cpu() == CPU_EZ80_Z80) {	<NL> \
+		<TAB><TAB>		sym.tok        = TK_##opcode;	<NL> \
+		<TAB>		}									<NL> \
+		<TAB>		else {								<NL> \
+		<TAB><TAB>		sym.tok        = TK_NAME;		<NL> \
+		<TAB>		}									<NL> \
+		<TAB>		fbreak; 							<NL> \
+	};													<NL>
+
+#define TOKEN_EZ80(opcode)	 \
+	TOKEN_EZ80_1(opcode, #opcode)
+
 %%{
 machine lexer;
 
@@ -95,7 +122,8 @@ variable eof eof_;
 action at_bol 		{ at_bol }	
 
 /* horizontal white space */
-hspace = (" " | "\t")*;
+hspace0 = (" " | "\t")*;
+hspace1 = (" " | "\t")+;
 
 /* Alpha numeric characters or underscore. */
 alnum_u = alnum | '_';
@@ -107,13 +135,13 @@ alpha_u = alpha | '_';
 name = alpha_u alnum_u*;
 
 /* Label */
-label = "." hspace name | name hspace ":";
+label = "." hspace0 name | name hspace0 ":";
 
 /* binary digit */
 bdigit = [01];
 
 /* index register suffix */
-index_reg_suffix = hspace ( "+" | "-" | ")" );
+index_reg_suffix = hspace0 ( "+" | "-" | ")" );
 
 /* STATE MACHINE */
 main := |*
@@ -268,8 +296,25 @@ static void set_scan_buf( const char *text, bool _at_bol )
 	%%write init;
 }
 
-static tokid_t _scan_get( void )
-{
+static Sym _scan_next(void) {
 	%%write exec;
+	return sym;
+}
+
+static tokid_t _scan_get(void) {
+	sym = _scan_next();
+	
+	// 2466: accept keyword as EQU argument
+	if (at_bol && sym.tok != TK_NAME) {
+		const char* p = te;
+		while (*p && isspace(*p))
+			p++;
+		if (*p == '=' || 
+		    (tolower(p[0])=='e' && tolower(p[1])=='q' && tolower(p[2])=='u' && !isalnum(p[3]) && p[3] != '_')) {
+			sym.tok = sym.tok_opcode = TK_NAME;
+			scan_expect_opcode();
+		}
+	}
+	
 	return sym.tok;
 }

@@ -24,7 +24,7 @@ PUBLIC l_mulu_64_64x64
    ;
    ; uses  : af, bc, de, hl, af', bc', de', hl'
 
-IF __CPU_Z180__ && ((__CLIB_OPT_IMATH = 0) || (__CLIB_OPT_IMATH = 100))
+IF (__CPU_Z180__ || __CPU_EZ80__) && ((__CLIB_OPT_IMATH = 0) || (__CLIB_OPT_IMATH = 100))
 
    EXTERN l_z180_mulu_64_64x64
    defc l_mulu_64_64x64 = l_z180_mulu_64_64x64
@@ -35,6 +35,13 @@ IF __CPU_Z80N__ && ((__CLIB_OPT_IMATH = 0) || (__CLIB_OPT_IMATH = 100))
 
    EXTERN l_z80n_mulu_64_64x64
    defc l_mulu_64_64x64 = l_z80n_mulu_64_64x64
+
+ELSE
+
+IF ( __CPU_RABBIT__) && ((__CLIB_OPT_IMATH = 0) || (__CLIB_OPT_IMATH = 100))
+
+   EXTERN l_r2ka_mulu_64_64x64
+   defc l_mulu_64_64x64 = l_r2ka_mulu_64_64x64
 
 ELSE
 
@@ -49,6 +56,8 @@ IF __CLIB_OPT_IMATH > 50
 
    EXTERN l_fast_mulu_64_64x64
    defc l_mulu_64_64x64 = l_fast_mulu_64_64x64
+
+ENDIF
 
 ENDIF
 

@@ -16,6 +16,7 @@ static void disassemble_loop(int start, int end);
 
 unsigned char *mem;
 int  c_cpu = CPU_Z80;
+int  c_adl_mode = 0;
 int  inverted = 0;
 int  c_autolabel = 0;
 
@@ -31,15 +32,20 @@ static void usage(char *program)
     printf("  -e <addr>      Address to stop disassembling at\n\n");
     printf("  -mz80          Disassemble z80 code\n");
     printf("  -mz180         Disassemble z180 code\n");
-    printf("  -mez80         Disassemble ez80 code (short mode)\n");
+    printf("  -mez80_z80     Disassemble ez80 (short) code\n");
+    printf("  -mez80         Disassemble ez80 ADL code\n");
     printf("  -mz80n         Disassemble z80n code\n");
     printf("  -mr2ka         Disassemble Rabbit 2000A code\n");
     printf("  -mr3k          Disassemble Rabbit 3000 code\n");
+    printf("  -mr4k          Disassemble Rabbit 4000 code\n");
+    printf("  -mr5k          Disassemble Rabbit 5000 code\n");
     printf("  -mr800         Disassemble R800 code\n");
     printf("  -mgbz80        Disassemble Gameboy z80 code\n");
     printf("  -m8080         Disassemble 8080 code (with z80 mnenomics)\n");
     printf("  -m8085         Disassemble 8085 code (with z80 mnenomics)\n");
-
+    printf("  -mkc160        Disassemble KC160\n");
+    printf("  -mkc160_z80    Disassemble KC160 in Z80 mode\n");
+    
     exit(1);
 }
 
@@ -107,6 +113,10 @@ int main(int argc, char **argv)
                     c_cpu = CPU_R2KA;
                 } else if ( strcmp(&argv[0][1],"mr3k") == 0 ) {
                     c_cpu = CPU_R3K;
+                } else if ( strcmp(&argv[0][1],"mr4k") == 0 ) {
+                    c_cpu = CPU_R4K;
+                } else if ( strcmp(&argv[0][1],"mr5k") == 0 ) {
+                    c_cpu = CPU_R4K;
                 } else if ( strcmp(&argv[0][1],"mr800") == 0 ) {
                     c_cpu = CPU_R800;
                 } else if ( strcmp(&argv[0][1],"mgbz80") == 0 ) {
@@ -115,8 +125,16 @@ int main(int argc, char **argv)
                     c_cpu = CPU_8080;
                 } else if ( strcmp(&argv[0][1],"m8085") == 0 ) {
                     c_cpu = CPU_8085;
+                } else if ( strcmp(&argv[0][1],"mez80_z80") == 0 ) {
+                    c_cpu = CPU_EZ80;
+                    c_adl_mode = 0;
                 } else if ( strcmp(&argv[0][1],"mez80") == 0 ) {
                     c_cpu = CPU_EZ80;
+                    c_adl_mode = 1;
+                } else if ( strcmp(&argv[0][1],"mkc160") == 0 ) {
+                    c_cpu = CPU_KC160;
+                } else if ( strcmp(&argv[0][1],"mkc160_z80") == 0 ) {
+                    c_cpu = CPU_KC160_Z80;
                 } else {
                     printf("Unknown CPU: %s\n",&argv[0][2]);
                 }
@@ -141,7 +159,7 @@ int main(int argc, char **argv)
                 {
                     amount = r;
                 }
-                end = start + amount;
+                end = start + (int)amount;
             } else {
                 fprintf(stderr, "Cannot load file '%s'\n",argv[1]);
             }
@@ -178,7 +196,12 @@ static void disassemble_loop(int start, int end)
 }
 
 
-uint8_t get_memory(uint16_t pc)
+uint8_t get_memory(uint32_t pc, memtype type)
 {
     return mem[pc % BUFF_SIZE] ^ inverted;
+}
+
+int israbbit4k(void)
+{
+    return c_cpu & CPU_R4K;
 }

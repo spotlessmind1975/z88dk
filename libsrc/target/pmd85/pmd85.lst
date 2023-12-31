@@ -4,12 +4,12 @@ target/pmd85/stdio/conio_map_colour
 target/pmd85/stdio/generic_console
 target/pmd85/stdio/generic_console_vpeek
 target/pmd85/stdio/generic_console_ioctl
-@stdio/stdio_8080.lst
-stdio/inkey/getk
-stdio/inkey/fgetc_cons
+@stdio/stdio.lst
+stdio/obj/${TYPE}/inkey/getk
+stdio/obj/${TYPE}/inkey/fgetc_cons
 
 @input/input_keyboard.lst
-@font/font_8x8/font_8x8.lst
+
 target/pmd85/games/joystick
 target/pmd85/games/keys_joystick
 @games/games.lst

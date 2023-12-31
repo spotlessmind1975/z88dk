@@ -1,31 +1,34 @@
 //-----------------------------------------------------------------------------
 // z80asm
-// Copyright (C) Paulo Custodio, 2011-2022
+// Copyright (C) Paulo Custodio, 2011-2023
 // License: The Artistic License 2.0, http://www.perlfoundation.org/artistic_license_2_0
 //-----------------------------------------------------------------------------
 
-#include "if.h"
+#include "../config.h"
 #include "args.h"
 #include "errors.h"
 #include "float.h"
-#include "lex.h"
+#include "if.h"
 #include "preproc.h"
+#include "scan.h"
+#include "strpool.h"
 #include "utils.h"
-#include "../config.h"
-#include <iostream>
-#include <iomanip>
+#include "xassert.h"
+#include "z80asm_defs.h"
 #include <cassert>
-#include <cstring>
 #include <climits>
+#include <cstring>
+#include <iomanip>
+#include <iostream>
+#include <map>
 using namespace std;
 
+extern "C" {
+    extern Symbol1* define_static_def_sym(const char* name, long value);
+    extern void undefine_static_def_sym(const char* name);
+}
+
 Args g_args;
-
-// environment variable
-#define Z80ASM_ENVVAR	"Z80ASM"
-
-// library base name
-#define Z80ASM_LIB_BASE	"z88dk-z80asm"
 
 //-----------------------------------------------------------------------------
 // version
@@ -34,7 +37,7 @@ Args g_args;
 #define Z88DK_VERSION "build " __DATE__
 #endif
 
-#define COPYRIGHT		"InterLogic 1993-2009, Paulo Custodio 2011-2022"
+#define COPYRIGHT		"InterLogic 1993-2009, Paulo Custodio 2011-2023"
 
 #define COPYRIGHT_MSG	"Z80 Macro Assembler " Z88DK_VERSION "\n(c) " COPYRIGHT
 
@@ -83,33 +86,72 @@ void Args::exit_help() {
 }
 
 //-----------------------------------------------------------------------------
+Args::Args()
+    : m_cpu(CPU_Z80), m_cpu_name(::cpu_name(m_cpu)) {
+}
+
+//-----------------------------------------------------------------------------
 // parsing
 //-----------------------------------------------------------------------------
 void Args::parse_args(const vector<string>& args) {
-
 	if (args.empty())
 		exit_copyright();
 
-	pre_parsing_actions();
+    // set m_verbose, if defined in env var
+    parse_env_vars();
+
+    // check for -v to activate verbosity before other options are parsed
+    for (auto& arg : args) {
+        if (unquote(expand_env_vars(arg)) == "-v")
+            m_verbose = true;
+    }
+
+    // show command line
+    if (m_verbose) {
+        cout << "% " << Z80ASM_PROG;
+        for (auto& arg : args) {
+            cout << " " << arg;
+        }
+        cout << endl;
+    }
+
 	if (g_errors.count() > 0)
 		return;
 
 	bool got_dash_dash = false;
 	for (auto& arg : args) {
-		if (arg.empty())
+        string arg1 = unquote(expand_env_vars(arg));
+		if (arg1.empty())
 			continue;
-		else if (arg == "--")
+		else if (arg1 == "--")
 			got_dash_dash = true;
-		else if (!got_dash_dash && (arg[0] == '-' || arg[0] == '+'))
-			parse_option(arg);
+		else if (!got_dash_dash && (arg1[0] == '-' || arg1[0] == '+'))
+			parse_option(arg1);
 		else
-			parse_file(arg);
+			parse_file(arg1);
 
 		if (g_errors.count() > 0)
 			return;
 	}
 
 	post_parsing_actions();
+}
+
+void Args::set_swap_ixiy(swap_ixiy_t swap_ixiy) {
+    m_swap_ixiy = swap_ixiy;
+
+    undefine_static_symbol("__SWAP_IX_IY__");
+
+    switch (m_swap_ixiy) {
+    case IXIY_NO_SWAP:
+        break;
+    case IXIY_SWAP:
+    case IXIY_SOFT_SWAP:
+        define_static_symbol("__SWAP_IX_IY__");
+        break;
+    default:
+        xassert(0);
+    }
 }
 
 string Args::prepend_output_dir(const string& filename) {
@@ -125,7 +167,7 @@ string Args::prepend_output_dir(const string& filename) {
 		// with strings instead.
 		// is it a win32 absolute path?
 		string file;
-		if (isalpha(filename[0]) && filename[1] == ':') {	// C:
+		if (is_alpha(filename[0]) && filename[1] == ':') {	// C:
 			file += m_output_dir + "/";
 			file += string(1, filename[0]) + "/";
 			file += string(filename.substr(2));
@@ -143,6 +185,16 @@ static string replace_ext(const string& filename, const string& ext) {
 	fs::path file_path{ filename };
 	file_path.replace_extension(ext);
 	return file_path.generic_string();
+}
+
+string Args::consol_obj_file_name() const {
+    if (m_output_dir.empty())
+        return m_consol_obj_file;
+    else {
+        fs::path file_path{ m_output_dir };
+        file_path /= fs::path{ m_consol_obj_file };
+        return file_path.generic_string();
+    }
 }
 
 string Args::asm_filename(const string& filename) {
@@ -214,9 +266,14 @@ string Args::reloc_filename(const string& bin_filename) {
 	return replace_ext(bin_filename, EXT_RELOC);
 }
 
-void Args::parse_option(const string& arg_) {
-	string arg = unquote(expand_env_vars(arg_));
+void Args::parse_option(const string& arg) {
 	string opt_arg;
+
+    if (arg == "-vv") {
+        m_debug_z80asm = true;
+        m_verbose = true;
+        return;
+    }
 
 #define OPT(opt_name, opt_param, opt_code, opt_help)					\
 	if (opt_param == nullptr && string(opt_name) == arg) {				\
@@ -257,11 +314,11 @@ bool Args::parse_opt_int(int& value, const string& opt_arg) {
 		p++;
 		radix = 16;
 	}
-	else if (opt_arg.length() > 2 && opt_arg[0] == '0' && tolower(opt_arg[1]) == 'x') {
+	else if (opt_arg.length() > 2 && opt_arg[0] == '0' && to_lower(opt_arg[1]) == 'x') {
 		p += 2;
 		radix = 16;
 	}
-	else if (isdigit(opt_arg[0]) && tolower(opt_arg[opt_arg.length() - 1]) == 'h') {
+	else if (is_digit(opt_arg[0]) && to_lower(opt_arg[opt_arg.length() - 1]) == 'h') {
 		suffix = opt_arg[opt_arg.length() - 1];
 		radix = 16;
 	}
@@ -290,16 +347,16 @@ void Args::parse_define(const string& opt_arg) {
 	else
 		ident = opt_arg.substr(0, equal_pos);
 
-	if (!isident(ident))
+	if (!is_ident(ident))
 		g_errors.error(ErrCode::IllegalIdent, ident);
 	else {
 		if (equal_pos == string::npos) {
-			define_static_def_sym(ident.c_str(), 1);
+            define_static_symbol(ident.c_str(), 1);
 		}
 		else {
 			int value = 0;
 			if (parse_opt_int(value, opt_arg.substr(equal_pos + 1))) 
-				define_static_def_sym(ident.c_str(), value);
+				define_static_symbol(ident.c_str(), value);
 			else
 				g_errors.error(ErrCode::InvalidDefineOption, opt_arg);
 		}
@@ -378,11 +435,11 @@ bool Args::collect_opt_arg(const string& opt_name, const string& arg,
 }
 
 void Args::parse_file(const string& arg_) {
-	if (arg_.empty())
-		return;
+    string arg = str_strip(unquote(arg_));
+    if (arg.empty())
+        return;
 
-	string arg = unquote(expand_env_vars(arg_));
-	if (arg[0] == '@')
+    if (arg[0] == '@')
 		expand_list_glob(arg.substr(1));
 	else
 		expand_source_glob(arg);
@@ -414,7 +471,7 @@ void Args::expand_list_glob(const string& pattern) {
 		if (fs::is_regular_file(fs::path(pattern)))
 			files.push_back(fs::path(pattern));		// only one file
 		else
-			g_errors.error(ErrCode::FileOpen, pattern);
+			g_errors.error(ErrCode::FileNotFound, pattern);
 	}
 	else {
 		expand_glob(files, pattern);			// list of files
@@ -428,9 +485,22 @@ void Args::expand_list_glob(const string& pattern) {
 			g_args.push_include_path(file.parent_path().generic_string());
 			{
 				if (g_preproc.open(file.generic_string(), false)) {
-					string line;
+					ScannedLine line;
 					while (g_preproc.get_unpreproc_line(line)) {
-						parse_args_in_text(line);
+                        string text = str_strip(unquote(expand_env_vars(line.text())));
+                        if (!text.empty()) {
+                            switch (text[0]) {
+                            case ';':
+                            case '#':
+                                break;  // comment
+                            case '-':
+                            case '+':
+                                parse_option(text); // option
+                                break;
+                            default:
+                                parse_file(text);
+                            }
+                        }
 					}
 				}
 			}
@@ -440,133 +510,159 @@ void Args::expand_list_glob(const string& pattern) {
 	}
 }
 
-
 // search for the first file in path, with the given extension,
 // with .asm extension and with .o extension
 // if not found, output error and return original file
+// run m4 if file is .asm.m4
 string Args::search_source(const string& filename) {
-	string out_filename;
+    if (str_ends_with(filename, EXT_M4)) {
+        string asm_filename = filename.substr(0, filename.size() - strlen(EXT_M4));
+        string m4_cmd = "m4 " + m_m4_options + " \"" + filename + "\" > \"" + asm_filename + "\"";
+        if (m_verbose)
+            cout << "% " << m4_cmd << endl;
+        if (0 != system(m4_cmd.c_str())) {
+			g_errors.error(ErrCode::CmdFailed, m4_cmd);
+            perror("m4");
+            exit(EXIT_FAILURE);
+        }
+        return search_source(asm_filename);
+    }
+    else {
+        string out_filename;
 
-	// check plain filename
-	if (check_source(filename, out_filename))
-		return out_filename;
+        // check plain filename
+        if (check_source(filename, out_filename))
+            return out_filename;
 
-	// check plain file in include path
-	string found_file = search_include_path(filename);
-	if (check_source(found_file, out_filename))
-		return out_filename;
+        // check plain file in include path
+        string found_file = search_include_path(filename);
+        if (found_file != filename && check_source(found_file, out_filename))
+            return out_filename;
 
-	// check filename with .asm extension
-	string asm_file = asm_filename(filename);
-	if (check_source(asm_file, out_filename))
-		return out_filename;
+        // check filename with .asm extension
+        string asm_file = filename + EXT_ASM;
+        if (check_source(asm_file, out_filename))
+            return out_filename;
 
-	// check filename with .asm extension in include path
-	found_file = search_include_path(asm_file);
-	if (check_source(found_file, out_filename))
-		return out_filename;
+        // check filename with .asm extension in include path
+        found_file = search_include_path(asm_file);
+        if (found_file != asm_file && check_source(found_file, out_filename))
+            return out_filename;
 
-	// check filename with .o extension
-	string o_file = o_filename(filename);
-	if (check_source(o_file, out_filename))
-		return out_filename;
+        // check filename with .o extension
+        string o_file = filename + EXT_O;
+        if (check_source(o_file, out_filename))
+            return out_filename;
 
-	// check filename with .o extension in include path
-	found_file = search_include_path(o_file);
-	if (check_source(found_file, out_filename))
-		return out_filename;
+        // check filename with .o extension in include path
+        found_file = search_include_path(o_file);
+        if (found_file != o_file && check_source(found_file, out_filename))
+            return out_filename;
 
-	// not found, avoid cascade of errors
-	if (g_errors.count() == 0)
-		g_errors.error(ErrCode::FileOpen, filename);
+        // check object file in the output directory
+        o_file = o_filename(filename);
+        if (check_source(o_file, out_filename))
+            return out_filename;
 
-	return fs::path(filename).generic_string();
+        // check filename with .o extension in include path
+        found_file = search_include_path(o_file);
+        if (found_file != o_file && check_source(found_file, out_filename))
+            return out_filename;
+
+        // not found, avoid cascade of errors
+        if (!g_errors.count())
+            g_errors.error(ErrCode::FileNotFound, filename);
+
+        return fs::path(filename).generic_string();
+    }
 }
 
 bool Args::check_source(const string& filename, string& out_filename) {
-	out_filename.clear();
+    out_filename.clear();
 
-	// avoid cascade of errors
-	if (g_errors.count() > 0) {
-		out_filename = fs::path(filename).generic_string();
-		return true;
-	}
+    // avoid cascade of errors
+    if (g_errors.count()) {
+        out_filename = fs::path(filename).generic_string();
+        return true;
+    }
 
-	fs::path file_path{ filename };
-	fs::path src_file, obj_file;
-	bool got_obj;
+    fs::path file_path{ filename };
+    fs::path src_file, obj_file;
+    bool got_obj = false;
 
-	if (!file_path.has_extension()) {
-		if (fs::is_regular_file(file_path))
-			src_file = filename;
-		else
-			src_file = asm_filename(filename);
-		obj_file = o_filename(filename);
-		got_obj = false;
-	}
-	else if (file_path.extension().generic_string() == EXT_O) {
-		src_file = asm_filename(filename);
-		obj_file = file_path;
-		got_obj = true;
-	}
-	else {
-		src_file = file_path;
-		obj_file = o_filename(filename);
-		got_obj = false;
-	}
+    if (file_path.extension().generic_string() == EXT_O) {
+        got_obj = true;
+        obj_file = file_path;
+        src_file = asm_filename(filename);
+    }
+    else if (file_path.extension().generic_string() == EXT_ASM) {
+        got_obj = false;
+        src_file = file_path;
+        obj_file = o_filename(filename);
+    }
+    else if (fs::is_regular_file(file_path)) {      // ASM with different extension
+        got_obj = false;
+        src_file = file_path;
+        obj_file = o_filename(filename);
+    }
+    else {
+        return false;
+    }
 
-	bool src_ok = fs::is_regular_file(src_file);
-	bool obj_ok = fs::is_regular_file(obj_file) &&
-		check_object_file_no_errors(obj_file.generic_string().c_str());
+    bool src_ok = fs::is_regular_file(src_file);
+    bool obj_ok = fs::is_regular_file(obj_file);
 
-	// if both .o and .asm exist and .o is valid, return .asm
-	// or .o if -d and .o is newer
-	// NOTE: -d must come before the file to have effect
-	if (src_ok && obj_ok) {
-		if (!m_date_stamp) {
-			// no -d
-			if (got_obj)
-				out_filename = obj_file.generic_string();
-			else
-				out_filename = src_file.generic_string();
-			return true;
-		}
-		else if (fs::last_write_time(obj_file) >= fs::last_write_time(src_file)) {
-			// -d and .o is up-to-date
-			out_filename = obj_file.generic_string();
-			return true;
-		}
-		else {
-			// -d and .o is old
-			out_filename = src_file.generic_string();
-			return true;
-		}
-	}
-	else if (src_ok) {
-		out_filename = src_file.generic_string();
-		return true;
-	}
-	else if (obj_ok) {
-		out_filename = obj_file.generic_string();
-		return true;
-	}
-	else {
-		// output object file errors, if any
-		if (fs::is_regular_file(obj_file))
-			check_object_file(obj_file.generic_string().c_str());
-		return false;
-	}
+    // if both .o and .asm exist, return .asm or .o if -d and .o is newer
+    // NOTE: -d must come before the file to have effect
+    if (src_ok && obj_ok) {
+        if (!m_date_stamp) {
+            // no -d
+            if (got_obj) {
+                out_filename = obj_file.generic_string();
+                if (!m_lib_for_all_cpus)
+                    check_object_file(obj_file.generic_string().c_str());
+            }
+            else
+                out_filename = src_file.generic_string();
+            return true;
+        }
+        else if (fs::last_write_time(obj_file) >= fs::last_write_time(src_file)) {
+            // -d and .o is up-to-date
+            out_filename = obj_file.generic_string();
+            if (!m_lib_for_all_cpus)
+                check_object_file(obj_file.generic_string().c_str());
+            return true;
+        }
+        else {
+            // -d and .o is old
+            out_filename = src_file.generic_string();
+            return true;
+        }
+    }
+    else if (!got_obj && src_ok) {
+        out_filename = src_file.generic_string();
+        return true;
+    }
+    else if (got_obj && obj_ok) {
+        out_filename = obj_file.generic_string();
+        if (!m_lib_for_all_cpus)
+            check_object_file(obj_file.generic_string().c_str());
+        return true;
+    }
+    else {
+        return false;
+    }
 }
 
 static string next_arg(const char*& p) {
 	string ret;
 
 	// skip blanks
-	while (isspace(*p))
+	while (is_space(*p))
 		p++;
 
 	// collect delimited string
-	while (*p != '\0' && !isspace(*p)) {
+	while (*p != '\0' && !is_space(*p)) {
 		char delim = '\0';
 		if (*p == '"' || *p == '\'')	// quoted substring
 			delim = *p;
@@ -644,66 +740,159 @@ string Args::search_path(vector<string>& path, const string& file) {
 	return file_path.generic_string();
 }
 
+void Args::set_cpu(int cpu) {
+    undefine_static_symbol("__CPU_Z80__");
+    undefine_static_symbol("__CPU_Z80_STRICT__");
+    undefine_static_symbol("__CPU_Z80N__");
+    undefine_static_symbol("__CPU_Z180__");
+    undefine_static_symbol("__CPU_EZ80__");
+    undefine_static_symbol("__CPU_EZ80_Z80__");
+    undefine_static_symbol("__CPU_ZILOG__");
+
+    undefine_static_symbol("__CPU_R800__");
+
+    undefine_static_symbol("__CPU_R2KA__");
+    undefine_static_symbol("__CPU_R3K__");
+    undefine_static_symbol("__CPU_R4K__");
+    undefine_static_symbol("__CPU_R5K__");
+    undefine_static_symbol("__CPU_RABBIT__");
+
+    undefine_static_symbol("__CPU_8080__");
+    undefine_static_symbol("__CPU_8085__");
+    undefine_static_symbol("__CPU_INTEL__");
+
+    undefine_static_symbol("__CPU_GBZ80__");
+
+    undefine_static_symbol("__CPU_KC160__");
+    undefine_static_symbol("__CPU_KC160_Z80__");
+
+    switch (cpu) {
+    case CPU_Z80:
+        m_cpu = CPU_Z80;
+        m_cpu_name = ::cpu_name(m_cpu);
+        define_static_symbol("__CPU_Z80__");
+        define_static_symbol("__CPU_ZILOG__");
+        break;
+    case CPU_Z80_STRICT:
+        m_cpu = CPU_Z80_STRICT;
+        m_cpu_name = ::cpu_name(m_cpu);
+        define_static_symbol("__CPU_Z80_STRICT__");
+        define_static_symbol("__CPU_ZILOG__");
+        break;
+    case CPU_Z80N:
+        m_cpu = CPU_Z80N;
+        m_cpu_name = ::cpu_name(m_cpu);
+        define_static_symbol("__CPU_Z80N__");
+        define_static_symbol("__CPU_ZILOG__");
+        break;
+    case CPU_Z180:
+        m_cpu = CPU_Z180;
+        m_cpu_name = ::cpu_name(m_cpu);
+        define_static_symbol("__CPU_Z180__");
+        define_static_symbol("__CPU_ZILOG__");
+        break;
+    case CPU_EZ80:
+        m_cpu = CPU_EZ80;
+        m_cpu_name = ::cpu_name(m_cpu);
+        define_static_symbol("__CPU_EZ80__");
+        define_static_symbol("__CPU_ZILOG__");
+        break;
+    case CPU_EZ80_Z80:
+        m_cpu = CPU_EZ80_Z80;
+        m_cpu_name = ::cpu_name(m_cpu);
+        define_static_symbol("__CPU_EZ80_Z80__");
+        define_static_symbol("__CPU_ZILOG__");
+        break;
+    case CPU_R800:
+        m_cpu = CPU_R800;
+        m_cpu_name = ::cpu_name(m_cpu);
+        define_static_symbol("__CPU_R800__");
+        break;
+    case CPU_R2KA:
+        m_cpu = CPU_R2KA;
+        m_cpu_name = ::cpu_name(m_cpu);
+        define_static_symbol("__CPU_R2KA__");
+        define_static_symbol("__CPU_RABBIT__");
+        break;
+    case CPU_R3K:
+        m_cpu = CPU_R3K;
+        m_cpu_name = ::cpu_name(m_cpu);
+        define_static_symbol("__CPU_R3K__");
+        define_static_symbol("__CPU_RABBIT__");
+        break;
+    case CPU_R4K:
+        m_cpu = CPU_R4K;
+        m_cpu_name = ::cpu_name(m_cpu);
+        define_static_symbol("__CPU_R4K__");
+        define_static_symbol("__CPU_RABBIT__");
+        break;
+    case CPU_R5K:
+        m_cpu = CPU_R5K;
+        m_cpu_name = ::cpu_name(m_cpu);
+        define_static_symbol("__CPU_R5K__");
+        define_static_symbol("__CPU_RABBIT__");
+        break;
+    case CPU_8080:
+        m_cpu = CPU_8080;
+        m_cpu_name = ::cpu_name(m_cpu);
+        define_static_symbol("__CPU_8080__");
+        define_static_symbol("__CPU_INTEL__");
+        break;
+    case CPU_8085:
+        m_cpu = CPU_8085;
+        m_cpu_name = ::cpu_name(m_cpu);
+        define_static_symbol("__CPU_8085__");
+        define_static_symbol("__CPU_INTEL__");
+        break;
+    case CPU_GBZ80:
+        m_cpu = CPU_GBZ80;
+        m_cpu_name = ::cpu_name(m_cpu);
+        define_static_symbol("__CPU_GBZ80__");
+        break;
+    case CPU_KC160:
+        m_cpu = CPU_KC160;
+        m_cpu_name = ::cpu_name(m_cpu);
+        define_static_symbol("__CPU_KC160__");
+        break;
+    case CPU_KC160_Z80:
+        m_cpu = CPU_KC160_Z80;
+        m_cpu_name = ::cpu_name(m_cpu);
+        define_static_symbol("__CPU_KC160_Z80__");
+        break;
+    default:
+        xassert(0);
+    }
+}
+
 void Args::set_cpu(const string& name) {
-	if (name == CPU_Z80_NAME) {
-		m_cpu = CPU_Z80;
-		m_cpu_name = CPU_Z80_NAME;
-	}
-	else if (name == CPU_Z80N_NAME) {
-		m_cpu = CPU_Z80N;
-		m_cpu_name = CPU_Z80N_NAME;
-	}
-	else if (name == CPU_Z180_NAME) {
-		m_cpu = CPU_Z180;
-		m_cpu_name = CPU_Z180_NAME;
-	}
-	else if (name == CPU_R2KA_NAME) {
-		m_cpu = CPU_R2KA;
-		m_cpu_name = CPU_R2KA_NAME;
-	}
-	else if (name == CPU_R3K_NAME) {
-		m_cpu = CPU_R3K;
-		m_cpu_name = CPU_R3K_NAME;
-	}
-	else if (name == CPU_8080_NAME) {
-		m_cpu = CPU_8080;
-		m_cpu_name = CPU_8080_NAME;
-	}
-	else if (name == CPU_8085_NAME) {
-		m_cpu = CPU_8085;
-		m_cpu_name = CPU_8085_NAME;
-	}
-	else if (name == CPU_GBZ80_NAME) {
-		m_cpu = CPU_GBZ80;
-		m_cpu_name = CPU_GBZ80_NAME;
-	}
-	else if (name == ARCH_TI83_NAME) {
-		m_cpu = CPU_Z80;
-		m_cpu_name = CPU_Z80_NAME;
-		m_ti83 = true;
-		m_ti83plus = false;
-	}
-	else if (name == ARCH_TI83PLUS_NAME) {
-		m_cpu = CPU_Z80;
-		m_cpu_name = CPU_Z80_NAME;
-		m_ti83 = false;
-		m_ti83plus = true;
-	}
-	else {
-		string error = name + "; expected: ";
-		error += CPU_Z80_NAME		",";
-		error += CPU_Z80N_NAME		",";
-		error += CPU_Z180_NAME		",";
-		error += CPU_R2KA_NAME		",";
-		error += CPU_R3K_NAME		",";
-		error += CPU_8080_NAME		",";
-		error += CPU_8085_NAME		",";
-		error += CPU_GBZ80_NAME		",";
-		error += ARCH_TI83_NAME		",";
-		error += ARCH_TI83PLUS_NAME	",";
-		error.pop_back(); // remove last comma
-		g_errors.error(ErrCode::InvalidCpu, error);
-	}
+    m_got_cpu_option = true;
+
+    if (name == "*") {
+        set_cpu(CPU_Z80);
+        m_lib_for_all_cpus = true;
+    }
+    else if (name == ARCH_TI83_NAME) {
+        set_cpu(CPU_Z80_STRICT);
+        m_ti83 = true;
+        m_ti83plus = false;
+    }
+    else if (name == ARCH_TI83PLUS_NAME) {
+        set_cpu(CPU_Z80_STRICT);
+        m_ti83 = false;
+        m_ti83plus = true;
+    }
+    else {
+        int id = cpu_id(name.c_str());
+        if (id != CPU_UNDEF)
+            set_cpu(id);
+        else {
+            string error = name + "; expected: " + cpu_list() + ",";
+            error += string(ARCH_TI83_NAME) + ",";
+            error += string(ARCH_TI83PLUS_NAME) + ",";
+            error.pop_back(); // remove last comma
+            g_errors.error(ErrCode::InvalidCpu, error);
+        }
+    }
 }
 
 void Args::set_filler(const string& opt_arg) {
@@ -714,37 +903,45 @@ void Args::set_filler(const string& opt_arg) {
 		m_filler = value;
 }
 
-void Args::pre_parsing_actions() {
-	parse_env_vars();
-}
-
 void Args::post_parsing_actions() {
 	set_consol_obj_options();
 
+    // check if -d and -m* were given
+    if (m_date_stamp && m_lib_for_all_cpus) {
+        g_errors.error(ErrCode::DateAndMstarIncompatible);
+    }
+
 	// check if we have any file to process
-	if (m_files.empty())
+    if (m_files.empty()) {
 		g_errors.error(ErrCode::NoSrcFile);
+    }
 
 	// make output directory if needed
-	if (!m_output_dir.empty())
+    if (!m_output_dir.empty()) {
 		fs::create_directories(fs::path(m_output_dir));
+    }
 
-	include_z80asm_lib();
 	define_assembly_defines();
+	include_z80asm_lib();
 }
 
 // parse environment variable options
 void Args::parse_env_vars() {
 	const char* options = getenv(Z80ASM_ENVVAR);
-	if (options)
+    if (options) {
+        if (string(options).find("-v") != string::npos) {
+            m_verbose = true;
+            cout << Z80ASM_ENVVAR << "=" << options << endl;
+        }
 		parse_args_in_text(options);
+    }
 }
 
 // make consolidated object
 void Args::set_consol_obj_options() {
 	if (!m_make_bin && !m_bin_file.empty()) {
 		m_consol_obj_file = m_bin_file;
-		m_make_bin = false;
+		m_bin_file.clear();
 	}
 }
 
@@ -796,15 +993,10 @@ string Args::search_z80asm_lib() {
 	return "";
 }
 
-// build z80asm_lib filename: z88dk-z80asm-<cpu>-<ixiy|''>.lib
+// build z80asm_lib filename: z88dk-z80asm.lib
 string Args::z80asm_lib_filename() {
 	string filename;
 	filename = Z80ASM_LIB_BASE;
-	filename += "-";
-	filename += m_cpu_name;
-	filename += "-";
-	if (m_swap_ixiy)
-		filename += "ixiy";
 	filename += EXT_LIB;
 	return filename;
 }
@@ -821,55 +1013,32 @@ bool Args::check_library(const fs::path& file_path) {
 }
 
 void Args::define_assembly_defines() {
-	switch (m_cpu) {
-	case CPU_Z80:
-		define_static_def_sym("__CPU_Z80__", 1);
-		define_static_def_sym("__CPU_ZILOG__", 1);
-		break;
-	case CPU_Z80N:
-		define_static_def_sym("__CPU_Z80N__", 1);
-		define_static_def_sym("__CPU_ZILOG__", 1);
-		break;
-	case CPU_Z180:
-		define_static_def_sym("__CPU_Z180__", 1);
-		define_static_def_sym("__CPU_ZILOG__", 1);
-		break;
-	case CPU_R2KA:
-		define_static_def_sym("__CPU_R2KA__", 1);
-		define_static_def_sym("__CPU_RABBIT__", 1);
-		break;
-	case CPU_R3K:
-		define_static_def_sym("__CPU_R3K__", 1);
-		define_static_def_sym("__CPU_RABBIT__", 1);
-		break;
-	case CPU_8080:
-		define_static_def_sym("__CPU_8080__", 1);
-		define_static_def_sym("__CPU_INTEL__", 1);
-		break;
-	case CPU_8085:
-		define_static_def_sym("__CPU_8085__", 1);
-		define_static_def_sym("__CPU_INTEL__", 1);
-		break;
-	case CPU_GBZ80:
-		define_static_def_sym("__CPU_GBZ80__", 1);
-		break;
-	default:
-		assert(0);
-	}
+    if (!m_got_cpu_option)
+        set_cpu(CPU_Z80);
 
-	if (m_swap_ixiy) {
-		define_static_def_sym("__SWAP_IX_IY__", 1);
-	}
+    set_swap_ixiy(m_swap_ixiy);
 
 	if (m_ti83) {
-		define_static_def_sym("__CPU_TI83__", 1);
+		define_static_symbol("__CPU_TI83__");
+        undefine_static_symbol("__CPU_TI83PLUS__");
 	}
 	else if (m_ti83plus) {
-		define_static_def_sym("__CPU_TI83PLUS__", 1);
+        undefine_static_symbol("__CPU_TI83__");
+        define_static_symbol("__CPU_TI83PLUS__");
 	}
 
 	// __FLOAT__xxx__
-	define_static_def_sym(get_float_format_define(), 1);
+	define_static_symbol(get_float_format_define());
+}
+
+void Args::define_static_symbol(const string& name, int value) {
+    define_static_def_sym(name.c_str(), value);
+    define_local_def_sym(name.c_str(), value);
+}
+
+void Args::undefine_static_symbol(const string& name) {
+    undefine_static_def_sym(name.c_str());
+    undefine_local_def_sym(name.c_str());
 }
 
 //-----------------------------------------------------------------------------
@@ -879,8 +1048,12 @@ bool option_verbose() {
 	return g_args.verbose();
 }
 
-bool option_swap_ixiy() {
+swap_ixiy_t option_swap_ixiy() {
 	return g_args.swap_ixiy();
+}
+
+void set_swap_ixiy_option(swap_ixiy_t swap_ixiy) {
+    g_args.set_swap_ixiy(swap_ixiy);
 }
 
 void push_includes(const char* dir) {
@@ -896,8 +1069,12 @@ const char* search_includes(const char* filename) {
 	return spool_add(searched_file.c_str());
 }
 
-int option_cpu() {
+cpu_t option_cpu() {
 	return g_args.cpu();
+}
+
+void set_cpu_option(int cpu) {
+    g_args.set_cpu(cpu);
 }
 
 const char* option_cpu_name() {
@@ -931,6 +1108,10 @@ const char* option_lib_file() {
 		return nullptr;
 	else
 		return spool_add(filename.c_str());
+}
+
+bool option_lib_for_all_cpus() {
+    return !g_args.lib_file().empty() && g_args.lib_for_all_cpus();
 }
 
 const char* option_bin_file() {
@@ -1068,4 +1249,8 @@ size_t option_files_size() {
 
 const char* option_file(size_t n) {
 	return spool_add(g_args.files().at(n).c_str());
+}
+
+bool option_debug_z80asm() {
+    return g_args.debug_z80asm();
 }

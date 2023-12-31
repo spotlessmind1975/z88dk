@@ -17,6 +17,8 @@ static char   *c_output_file = NULL;
 static char    c_debug_adb_file = 0;
 static char    c_debug_adb_defc = 0;
        char    c_debug_entry_points = 0;
+int     c_banked_style = BANKED_STYLE_REGULAR;
+
 
 static int      gargc; /* global copies of command line args */
 static char   **gargv;
@@ -89,19 +91,24 @@ static option  sccz80_opts[] = {
     { 0, "", OPT_HEADER, "CPU Targetting:", NULL, NULL, 0 },
     { 0, "m8080", OPT_ASSIGN|OPT_INT, "Generate output for the i8080", &c_cpu, NULL, CPU_8080 },
     { 0, "m8085", OPT_ASSIGN|OPT_INT, "Generate output for the i8085", &c_cpu, NULL, CPU_8085 },
+    { 0, "mez80_z80", OPT_ASSIGN|OPT_INT, "Generate output for the ez80 in z80 mode", &c_cpu, NULL, CPU_EZ80_Z80 },
     { 0, "mz80", OPT_ASSIGN|OPT_INT, "Generate output for the z80", &c_cpu, NULL, CPU_Z80 },
     { 0, "mz80n", OPT_ASSIGN|OPT_INT, "Generate output for the z80n", &c_cpu, NULL, CPU_Z80N },
     { 0, "mz180", OPT_ASSIGN|OPT_INT, "Generate output for the z180", &c_cpu, NULL, CPU_Z180 },
     { 0, "mr2ka", OPT_ASSIGN|OPT_INT, "Generate output for the Rabbit 2000A", &c_cpu, NULL, CPU_R2KA },
     { 0, "mr3k", OPT_ASSIGN|OPT_INT, "Generate output for the Rabbit 3000", &c_cpu, NULL, CPU_R3K },
-    { 0, "mgbz80", OPT_ASSIGN|OPT_INT, "Generate output for the Gameboy Z80", &c_cpu, NULL, CPU_GBZ80 },
+    { 0, "mr4k", OPT_ASSIGN|OPT_INT, "Generate output for the Rabbit 4000", &c_cpu, NULL, CPU_R4K },
+    { 0, "mgbz80", OPT_ASSIGN|OPT_INT, "Generate output for the Gameboy CPU", &c_cpu, NULL, CPU_GBZ80 },
+    { 0, "mkc160", OPT_ASSIGN|OPT_INT, "Generate output for the KC160", &c_cpu, NULL, CPU_KC160 },
     { 0, "", OPT_HEADER, "Code generation options", NULL, NULL, 0 },
     { 0, "unsigned", OPT_BOOL, "Make all types unsigned", &c_default_unsigned, NULL, 0 },
     { 0, "disable-builtins", OPT_BOOL|OPT_DOUBLE_DASH, "Disable builtin functions",&c_disable_builtins, NULL, 0},
     { 0, "params-offset", OPT_INT, "=<num> Base offset for the function parameters (default: 2)",&c_params_offset,NULL, 0},
     { 0, "doublestr", OPT_BOOL, "Store FP constants as strings", &c_double_strings, NULL, 0 },
     { 0, "math-z88", OPT_ASSIGN|OPT_INT, "(deprecated) Make FP constants match z88", &c_maths_mode, NULL, MATHS_Z88 },
-
+    { 0, "banked-style=regular", OPT_ASSIGN|OPT_INT, "Use regular banked calling style", &c_banked_style, NULL, BANKED_STYLE_REGULAR },
+    { 0, "banked-style=ti", OPT_ASSIGN|OPT_INT, "Use ticalc banked calling style", &c_banked_style, NULL, BANKED_STYLE_TICALC },
+    
     { 0, "fp-exponent-bias", OPT_INT, "=<num> FP exponent bias (default: 128)", &c_fp_exponent_bias, NULL, 0 },
     { 0, "fp-mantissa-size", OPT_INT, "=<num> FP mantissa size (default: 5 bytes)", &c_fp_mantissa_bytes, NULL, 0 },
     { 0, "fp-mode=z80", OPT_ASSIGN|OPT_INT, "Use 48 bit doubles", &c_maths_mode, NULL, MATHS_Z80 },
@@ -300,8 +307,9 @@ int main(int argc, char** argv)
 
 
 
-    outstr("; --- Start of Optimiser additions ---\n\n");
+    gen_switch_section(c_bss_section);
     gen_switch_section(c_code_section);
+    outstr("; --- Start of Optimiser additions ---\n\n");
     /* dump literal queues, with label */
     /* litq starts from 1, so literp has to be -1 */
     dumplits(0, YES, litptr - 1, litlab, litq + 1);
@@ -327,7 +335,7 @@ int main(int argc, char** argv)
 /*
  *      Abort compilation
  */
-void ccabort()
+void ccabort(void)
 {
     if (inpt2 != NULL)
         endinclude();
@@ -345,7 +353,7 @@ void ccabort()
  * defines, includes, and function
  * definitions are legal...
  */
-void parse()
+void parse(void)
 {
     while (eof == 0) { /* do until no more input */
         if (amatch("extern")) {
@@ -379,7 +387,7 @@ void parse()
 /*
  *      Report errors for user
  */
-void errsummary()
+void errsummary(void)
 {
     /* see if anything left hanging... */
     if (ncmp) {
@@ -421,7 +429,7 @@ char *nextarg(int n, char* s, int size)
  * make a few preliminary entries in the symbol table
  */
 
-void setup_sym()
+void setup_sym(void)
 {
     defmac("Z80");
     defmac("SMALL_C");
@@ -430,11 +438,11 @@ void setup_sym()
     addglb("__asm__", asm_function("__asm__"), 0, KIND_LONG, 0, LSTATIC);
 }
 
-void info()
+void info(void)
 {
     fputs(titlec, stderr);
     fputs(Version, stderr);
-    fputs("\n(C) 1980-2022 Cain, Van Zandt, Hendrix, Yorston, z88dk\n", stderr);
+    fputs("\n(C) 1980-2023 Cain, Van Zandt, Hendrix, Yorston, z88dk\n", stderr);
     fprintf(stderr, "Usage: %s [flags] [file]\n", gargv[0]);
 }
 
@@ -474,7 +482,7 @@ static void dumpsymdebug(void)
  ***********************************************************************
  */
 
-static void dumpfns()
+static void dumpfns(void)
 {
     int type, storage;
     SYMBOL* ptr;
@@ -500,6 +508,11 @@ static void dumpfns()
                     GlobalPrefix();                    
                     outname(ptr->name, dopref(ptr)); nl();
                     debug_write_symbol(ptr);
+                    if ( ptr->ctype->flags & BANKED && c_banked_style == BANKED_STYLE_TICALC) {
+                         GlobalPrefix();
+                         outstr(BANKED_SYMBOL_PREFIX);
+                         outname(ptr->name, dopref(ptr)); nl();
+                    }
                 }
                 if ( ptr->flags & ASSIGNED_ADDR ) {
                     outfmt("\tdefc\t"); outname(ptr->name,1); outfmt("\t= %d\n", ptr->ctype->value);
@@ -589,7 +602,7 @@ void WriteDefined(char* sname, int value)
 
 /*
  */
-void dumpvars()
+void dumpvars(void)
 {
     int ident, type, storage;
     SYMBOL* ptr;
@@ -735,7 +748,7 @@ int dumpzero(int size, int count)
 /*
  *      Get output filename
  */
-void openout()
+void openout(void)
 {
     char filen2[FILENAME_LEN + 1];
     char extension[FILENAME_LEN+1];
@@ -774,7 +787,7 @@ void openout()
 /*
  *      Get (next) input file
  */
-void openin()
+void openin(void)
 {
     input = NULL; /* none to start with */
     while (input == NULL) { /* any above 1 allowed */
@@ -810,7 +823,7 @@ void openin()
 /*
  *      Reset line count, etc.
  */
-void newfile()
+void newfile(void)
 {
     lineno = /* no lines read */
         infunc = 0; /* therefore not in fn. */
@@ -820,7 +833,7 @@ void newfile()
 /*
  *      Open an include file
  */
-void doinclude()
+void doinclude(void)
 {
     char name[FILENAME_LEN + 1], *cp;
 
@@ -861,7 +874,7 @@ void doinclude()
 /*
  *      Close an include file
  */
-void endinclude()
+void endinclude(void)
 {
     if (c_verbose) {
         toconsole();
@@ -878,7 +891,7 @@ void endinclude()
 /*
  *      Close the output file
  */
-void closeout()
+void closeout(void)
 {
     tofile(); /* if diverted, return to file */
     if (output) {
@@ -969,7 +982,7 @@ void DispVersion(char* arg)
  *      This routine called via atexit to clean up memory
  */
 
-void atexit_deallocate()
+void atexit_deallocate(void)
 {
     FREENULL(litq);
     FREENULL(dubq);
@@ -994,3 +1007,4 @@ void* mymalloc(size_t size)
     }
     return 0; /* Sigh */
 }
+

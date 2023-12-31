@@ -2235,11 +2235,6 @@
 .%1
 =
 
-	pop	hl
-	push	hl
-	pop	bc
-=
-	pop	hl
 
 	push	hl
 	pop	de
@@ -6821,6 +6816,7 @@ $notcpu 8085
 %notcpu 8085
 %notcpu r2ka
 %notcpu r3k
+%notcpu kc160
 %check 4 <= %1 <= 8
 	ld	bc,%1
 	add	hl,bc
@@ -6831,6 +6827,7 @@ $notcpu 8085
 %notcpu 8085
 %notcpu r2ka
 %notcpu r3k
+%notcpu kc160
 %notcpu gbz80
 %check 1 <= %1 <= 8
 	ld	hl,%1	;const
@@ -6842,6 +6839,7 @@ $notcpu 8085
 %notcpu 8085
 %notcpu r2ka
 %notcpu r3k
+%notcpu kc160
 	inc	hl
 	inc	hl
 	inc	hl
@@ -6852,6 +6850,7 @@ $notcpu 8085
 %notcpu 8085
 %notcpu r2ka
 %notcpu r3k
+%notcpu kc160
 	inc	hl
 	inc	hl
 	call	l_gchar
@@ -6861,6 +6860,7 @@ $notcpu 8085
 %notcpu 8085
 %notcpu r2ka
 %notcpu r3k
+%notcpu kc160
 	inc	hl
 	call	l_gchar
 =
@@ -6869,6 +6869,7 @@ $notcpu 8085
 %notcpu 8085
 %notcpu r2ka
 %notcpu r3k
+%notcpu kc160
 %check 4 <= %1 <= 8
 	ld	bc,%1
 	add	hl,bc

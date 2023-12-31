@@ -12,14 +12,14 @@ target/z9001/stdio/ansi/f_ansi_attr
 target/z9001/stdio/ansi/f_ansi_bel
 target/z9001/stdio/ansi/f_ansi_char
 target/z9001/stdio/ansi/f_ansi_cls
-stdio/ansi/generic/f_ansi_dline
+stdio/obj/${TYPE}/ansi/generic/f_ansi_dline
 target/z9001/stdio/ansi/f_ansi_scrollup
 @stdio/stdio.lst
 target/z9001/games/joystick
 @games/games.lst
 target/z9001/graphics/textpixl
 
-@font/font_8x8/font_8x8.lst
+
 
 target/z9001/graphics/cleargraphics
 target/z9001/graphics/getmaxx

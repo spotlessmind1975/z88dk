@@ -6,7 +6,7 @@ target/x1/input/in_Pause
 target/x1/input/in_Wait
 target/x1/input/in_WaitForKey
 target/x1/input/in_WaitForNoKey
-input/fgetc_cons_inkey
+input/obj/${TYPE}/fgetc_cons_inkey
 target/x1/stdio/generic_console_cls
 target/x1/stdio/generic_console_ioctl
 target/x1/stdio/generic_console_printc
@@ -18,7 +18,7 @@ target/x1/stdio/conio_vars
 target/x1/stdio/conio_map_colour
 target/x1/stdio/CRT_FONT
 @stdio/ansicore.lst
-@font/font_8x8/font_8x8.lst
+
 target/x1/stdio/ansi/f_ansi_attr
 target/x1/stdio/ansi/f_ansi_bel
 target/x1/stdio/ansi/f_ansi_char

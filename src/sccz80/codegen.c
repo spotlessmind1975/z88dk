@@ -26,6 +26,7 @@
  */
 
 #include "ccdefs.h"
+#include "define.h"
 #include <time.h>
 #include <math.h>
 
@@ -256,7 +257,7 @@ void outname(const char* sname, char pref)
 }
 
 
-void reset_namespace()
+void reset_namespace(void)
 {
     current_nspace = NULL;
 }
@@ -1160,15 +1161,28 @@ void gen_hl_call(Type *functype, int module, int address)
     outfmt("\tcall\t%d\n", address);
 }
 
-void gen_bankedcall(SYMBOL *sym)
+void gen_bankedcall(SYMBOL *sym, Type* functype)
 {
     if (sym->ctype->return_type->kind == KIND_LONGLONG) {
         ol("ld\tbc,__i64_acc");
         push("bc");
     }
-    ol("call\tbanked_call");
-    ot("defq\t"); outname(sym->name, dopref(sym)); nl();
-}
+    if ( c_banked_style == BANKED_STYLE_TICALC ) {
+        ol("rst\t$28");            // BCALL, meaning the system will handle paging for us
+
+        outfmt(".%s%x%s%s\n",    // This label can be exported as a .map for appmake
+            BANKED_SYMBOL_PREFIX, 
+            getlabel(), // All labels must be unique
+            dopref(sym) ? "_" : "",
+            sym->name                  // Label must to the same to label in the other page file
+            ); 
+        ol("defw 0"); // Should be replaced with appmake
+
+    } else {
+        ol("call\tbanked_call");
+        ot("defq\t"); outname(sym->name, dopref(sym)); nl();
+    }
+ }
 
 /* djm (move this!) Decide whether to print a prefix or not
  * This uses new flags bit LIBRARY
@@ -1491,6 +1505,7 @@ void gen_leave_function(Kind vartype, char type, int incritical)
 
     if (type)
         setcond(type);
+
     ol("ret"); nl(); nl(); /* and exit function */
 }
 
@@ -1679,6 +1694,23 @@ void scale(Kind type, Type *tag)
 
 static void quikmult(int type, int32_t size, char preserve)
 {
+#define mult2l() do {             \
+        ol("add\thl,hl");         \
+        if ( IS_8085() ) {        \
+            ol("rl\tde");         \
+        } else if ( IS_8080() ) { \
+            ol("ld\ta,e");        \
+            ol("rla");            \
+            ol("ld\te,a");        \
+            ol("ld\ta,d");        \
+            ol("rla");            \
+            ol("ld\td,a");        \
+        } else {                  \
+            ol("rl\te");          \
+            ol("rl\td");          \
+        }                         \
+    } while (0)
+
      if ( type == KIND_LONG ) {
 
         /* Normal long multiplication is:
@@ -1695,164 +1727,34 @@ static void quikmult(int type, int32_t size, char preserve)
                 vconst(0);
                 break;
             case 128:
-                ol("add\thl,hl");
-                if ( IS_8085() ) {
-                    ol("rl\tde");
-                } else if ( IS_8080() ) {
-                    ol("ld\ta,e");
-                    ol("rla");
-                    ol("ld\te,a");
-                    ol("ld\ta,d");
-                    ol("rla");
-                    ol("ld\td,a");
-                } else {
-                    ol("rl\te");
-                    ol("rl\td");
-                }
+                mult2l();
                 /* Fall through to x64 */
             case 64:
-                ol("add\thl,hl");
-                if ( IS_8085() ) {
-                    ol("rl\tde");
-                } else if ( IS_8080() ) {
-                    ol("ld\ta,e");
-                    ol("rla");
-                    ol("ld\te,a");
-                    ol("ld\ta,d");
-                    ol("rla");
-                    ol("ld\td,a");
-                } else {
-                    ol("rl\te");
-                    ol("rl\td");
-                }
+                mult2l();
                 /* Fall through to x32 */
             case 32:
-                ol("add\thl,hl");
-                if ( IS_8085() ) {
-                    ol("rl\tde");
-                } else if ( IS_8080() ) {
-                    ol("ld\ta,e");
-                    ol("rla");
-                    ol("ld\te,a");
-                    ol("ld\ta,d");
-                    ol("rla");
-                    ol("ld\td,a");
-                } else {
-                    ol("rl\te");
-                    ol("rl\td");
-                }
+                mult2l();
                 /* Fall through to x16 */
             case 16:
-                ol("add\thl,hl");
-                if ( IS_8085() ) {
-                    ol("rl\tde");
-                } else if ( IS_8080() ) {
-                    ol("ld\ta,e");
-                    ol("rla");
-                    ol("ld\te,a");
-                    ol("ld\ta,d");
-                    ol("rla");
-                    ol("ld\td,a");
-                } else {
-                    ol("rl\te");
-                    ol("rl\td");
-                }
+                mult2l();
                 /* Fall through to x8 */
             case 8:
-                ol("add\thl,hl");
-                if ( IS_8085() ) {
-                    ol("rl\tde");
-                } else if ( IS_8080() ) {
-                    ol("ld\ta,e");
-                    ol("rla");
-                    ol("ld\te,a");
-                    ol("ld\ta,d");
-                    ol("rla");
-                    ol("ld\td,a");
-                } else {
-                    ol("rl\te");
-                    ol("rl\td");
-                }
+                mult2l();
                 /* Fall through to x4 */
             case 4:
-                ol("add\thl,hl");
-                if ( IS_8085() ) {
-                    ol("rl\tde");
-                } else if ( IS_8080() ) {
-                    ol("ld\ta,e");
-                    ol("rla");
-                    ol("ld\te,a");
-                    ol("ld\ta,d");
-                    ol("rla");
-                    ol("ld\td,a");
-                } else {
-                    ol("rl\te");
-                    ol("rl\td");
-                }
+                mult2l();
                 /* Fall through to x2 */
             case 2:
-                ol("add\thl,hl");
-                if ( IS_8085() ) {
-                    ol("rl\tde");
-                } else if ( IS_8080() ) {
-                    ol("ld\ta,e");
-                    ol("rla");
-                    ol("ld\te,a");
-                    ol("ld\ta,d");
-                    ol("rla");
-                    ol("ld\td,a");
-                } else {
-                    ol("rl\te");
-                    ol("rl\td");
-                }
+                mult2l();
                 break;
             case 2048:
-                ol("add\thl,hl");
-                if ( IS_8085() ) {
-                    ol("rl\tde");
-                } else if ( IS_8080() ) {
-                    ol("ld\ta,e");
-                    ol("rla");
-                    ol("ld\te,a");
-                    ol("ld\ta,d");
-                    ol("rla");
-                    ol("ld\td,a");
-                } else {
-                    ol("rl\te");
-                    ol("rl\td");
-                }
+                mult2l();
                 /* Fall through to x1024 */
             case 1024:
-                ol("add\thl,hl");
-                if ( IS_8085() ) {
-                    ol("rl\tde");
-                } else if ( IS_8080() ) {
-                    ol("ld\ta,e");
-                    ol("rla");
-                    ol("ld\te,a");
-                    ol("ld\ta,d");
-                    ol("rla");
-                    ol("ld\td,a");
-                } else {
-                    ol("rl\te");
-                    ol("rl\td");
-                }
+                mult2l();
                 /* Fall through to x512 */
             case 512:
-                ol("add\thl,hl");
-                if ( IS_8085() ) {
-                    ol("rl\tde");
-                } else if ( IS_8080() ) {
-                    ol("ld\ta,e");
-                    ol("rla");
-                    ol("ld\te,a");
-                    ol("ld\ta,d");
-                    ol("rla");
-                    ol("ld\td,a");
-                } else {
-                    ol("rl\te");
-                    ol("rl\td");
-                }
+                mult2l();
                 /* Fall through to x256 */
             case 256:
                 ol("ld\td,e");
@@ -2236,7 +2138,11 @@ static void quikmult(int type, int32_t size, char preserve)
             if (preserve)
                 ol("push\tde");
             const2(size);
-            callrts("l_mult"); /* WATCH OUT!! */
+            if ( c_cpu & CPU_KC160) {
+                ol("mul\tde,hl");
+            } else {
+                callrts("l_mult"); /* WATCH OUT!! */
+            }
             if (preserve)
                 ol("pop\tde");
             break;
@@ -2650,7 +2556,7 @@ void mult(LVALUE* lval)
         break;
     case KIND_CHAR:
         if ( lval->ltype->isunsigned ) {
-            if (c_cpu == CPU_Z180 ) {
+            if (c_cpu == CPU_Z180 || IS_EZ80() || IS_KC160() ) {
                 ot("ld\th,e\n");
                 ot("mlt\thl\n");
                 break;
@@ -2672,10 +2578,11 @@ void mult(LVALUE* lval)
             }
         }
     default:
-        if (ulvalue(lval))
-            callrts("l_mult_u");
-        else
-            callrts("l_mult");
+        if (c_cpu & CPU_KC160 ) {
+            ol( ulvalue(lval) ? "mul\tde,hl" : "muls\tde,hl");
+        } else {
+            callrts( ulvalue(lval) ? "l_mult_u" : "l_mult");
+        }
     }
 }
 
@@ -5326,7 +5233,7 @@ void gen_emit_line(int line)
 
 /* Prefix for assembler */
 
-void prefix()
+void prefix(void)
 {
     outbyte('.');
 }
@@ -5338,7 +5245,7 @@ void printlabel(int label)
 }
 
 /* Print a label suffix */
-void col()
+void col(void)
 {
     //outstr(":");
 }
@@ -5435,7 +5342,7 @@ void gen_pop_frame(void)
 }
 
 
-void gen_builtin_strcpy()
+void gen_builtin_strcpy(void)
 {
     int label;
     // hl holds src on entry, on stack= dest
@@ -5616,7 +5523,7 @@ void gen_intrinsic_in(SYMBOL *sym)
         return;
     }
     if (sym->type == KIND_PORT8 ) {
-        if ( c_cpu == CPU_Z180 ) {
+        if ( c_cpu == CPU_Z180 || IS_EZ80() ) {
             outstr("\tin0\tl,("); outname(sym->name, 1); outstr(")"); nl();
         } else {
             outstr("\tin\ta,("); outname(sym->name, 1); outstr(")"); nl();
@@ -5647,7 +5554,7 @@ void gen_intrinsic_out(SYMBOL *sym)
         return;
     }
     if (sym->type == KIND_PORT8 ) {
-        if ( c_cpu == CPU_Z180 ) {
+        if ( c_cpu == CPU_Z180 || IS_EZ80() ) {
             outstr("\tout0\t("); outname(sym->name, 1); outstr("),l"); nl();
         } else {
             ol("ld\ta,l");
