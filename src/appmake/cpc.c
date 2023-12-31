@@ -21,6 +21,7 @@ static char    *crtfile = NULL;
 static char    *outfile = NULL;
 static char    *blockname = NULL;
 static char    *banked_space = NULL;
+static char    *afile = NULL;
 static char     audio = 0;
 static char     dumb = 0;
 static char     loud = 0;
@@ -42,6 +43,7 @@ option_t     cpc_options[] = {
      {'b', "binfile", "Linked binary file", OPT_STR, &binname},
      {'c', "crt0file", "crt0 file used in linking", OPT_STR, &crtfile},
      {'o', "output", "Name of output file", OPT_STR, &outfile},
+     {'f', "afile", "additional files to put into the disk", OPT_STR, &afile},
      {0, "bankspace", "Create custom bank spaces", OPT_STR, &banked_space},
      {0, "disk", "Generate a .dsk image", OPT_BOOL, &disk},
      {0, "audio", "Generate an audio WAV file", OPT_BOOL, &audio},
@@ -721,15 +723,15 @@ int cpc_exec(char* target)
 
     // If an output file was not specified, use the binary
     // file name but change the extension
-    if (outfile == NULL)
-    {
+    // if (outfile == NULL)
+    // {
         strcpy(filename, binname);
-        suffix_change(filename, ".cpc");
-    }
-    else
-    {
-        strcpy(filename, outfile);
-    }
+        suffix_change(filename, ".");
+    // }
+    // else
+    // {
+    //     strcpy(filename, outfile);
+    // }
 
     inFileBuff = readFile(binname, crtfile, &binary_length);
 
@@ -757,14 +759,16 @@ int cpc_exec(char* target)
     outFileBuff = cpc_layout_file(inFileBuff, cpm_filename, binary_length, pos, 2, &file_len);
     free(inFileBuff);
 
-    writeFile(filename, outFileBuff, (int)file_len);
+    if ( !disk ) {
+        writeFile(filename, outFileBuff, (int)file_len);
+    }
 
     if (disk)
     {
         char disc_image_name[FILENAME_MAX + 1];
         disc_handle *h;
 
-        strcpy(disc_image_name, binname);
+        strcpy(disc_image_name, outfile);
         suffix_change(disc_image_name, ".dsk");
 
         if ((h = cpm_create_with_format("cpcsystem")) == NULL)
@@ -775,6 +779,21 @@ int cpc_exec(char* target)
 
         disc_write_file(h, cpm_filename, outFileBuff, file_len);
         free(outFileBuff);
+
+        if ( afile ) {
+            printf( "Adding %s\n", afile );
+            char * aFileTokenized = strtok( afile, "," );
+            while( aFileTokenized ) {
+                inFileBuff = readFile( aFileTokenized, NULL, &binary_length );
+                cpm_create_filename( aFileTokenized, cpm_filename, 0, 0 );
+                outFileBuff = cpc_layout_file( inFileBuff, cpm_filename, binary_length, 0, 0, &file_len);
+                disc_write_file(h, cpm_filename, outFileBuff, file_len);
+                free(inFileBuff);
+                free(outFileBuff);
+                printf( "Adding %s as %s\n", aFileTokenized, cpm_filename );
+                aFileTokenized = strtok( NULL, "," );
+            }
+        }
 
         // Write the banks
         bsnum_bank = mb_find_bankspace(&memory, "BANK");
