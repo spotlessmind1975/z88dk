@@ -592,8 +592,8 @@ static void option_print(char *execname, char *ident, char *copyright, char *des
 {
     option_t *opt = opts;
     char      optstr[4];
-
-    fprintf(stderr,"appmake +%s (%s)\n\n%s\n",ident,execname,copyright);
+    
+    fprintf(stdout,"appmake +%s (%s)\n\n%s\n",ident,execname,copyright);
 
     if ( desc && strlen(desc) )
         fprintf(stderr,"\n%s\n",desc);
