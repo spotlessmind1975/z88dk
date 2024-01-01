@@ -341,7 +341,8 @@ struct {
       "Philips Videopac C7420 cassette format conversion",
       NULL,
       c7420_exec,    &c7420_options },
-    { "bin2cpc",  "cpc",      "(C) 2003 Dominic Morris, (C) 1997 Pierre Thevenet",
+      // ugbasix fix
+    { "bin2cpc-ugbasic",  "cpc",      "(C) 2024 Marco Spedaletti, (C) 2003 Dominic Morris, (C) 1997 Pierre Thevenet",
       "Creates an AMSDOS file suitable for writing to a .DSK image, opt. WAV",
       NULL,
       cpc_exec,   &cpc_options },
