@@ -23,7 +23,7 @@ git_count ?= $(shell git rev-list --count HEAD)
 version ?= $(shell date +%Y%m%d)
 
 INSTALL ?= install
-CFLAGS ?= -O2
+CFLAGS ?= -O2 -static
 CC ?= gcc
 # Prefix for executables (eg z88dk-, hence z88dk-z80asm, z88dk-copt etc)
 CROSS ?= 0
